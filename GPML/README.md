@@ -1,4 +1,4 @@
-# GPML (Graphical Pathway Markup Language)
+## GPML (Graphical Pathway Markup Language)
 
 [Current Schema Documentation](https://pathvisio.org/documentation/GPML).
 
