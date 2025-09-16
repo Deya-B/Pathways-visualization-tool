@@ -50,11 +50,10 @@ class Interaction:
         self.source = source
         self.target = target
         self.type = interaction_type
-        self.graph_id = f"id{uuid.uuid4().hex[:8]}"
         self.anchor_id = None  # only for conversions
 
     def to_gpml(self):
-        interaction = ET.Element("Interaction"), {"GraphID": self.graph_id}
+        interaction = ET.Element("Interaction")
                     # ET.Element(tag, attrib)
         graphics = ET.SubElement(interaction, "Graphics", {"LineThickness": "1.0"})
                  # ET.SubElement(parent, tag, attrib)
@@ -83,8 +82,7 @@ class Interaction:
             self.anchor_id = uuid.uuid4().hex[:5]
             ET.SubElement(graphics, "Anchor", {
                 "Position": "0.4",
-                "Shape": "None",
-                "GraphId": self.anchor_id
+                "Shape": "None"
             })
 
         elif self.type.lower() == "catalysis":
@@ -111,30 +109,41 @@ class Pathway:
     def add_interaction(self, interaction):
         self.interactions.append(interaction)
 
+    def assign_layout(self):
+        G = nx.DiGraph()
+        for node_id, node in self.nodes.items():
+            G.add_node(node_id)
+        for inter in self.interactions:
+            G.add_edge(inter.source.label, inter.target.label)
+
+        pos = nx.spring_layout(G, k=2, scale=400)
+        for label, (x, y) in pos.items():
+            node = self.nodes[label]
+            node.x = float(x * 500 + 250)   # rescale & center
+            node.y = float(y * 500 + 400)
+
     def to_gpml(self):
-        root = ET.Element("Pathway", {  # define the elements of the pathway
+        # define the elements of the pathway
+        root = ET.Element("Pathway", {  
             "xmlns": "http://pathvisio.org/GPML/2013a",
             "Name": self.title,
-            "Version": "Date",                                                  # ADD DATE CONTROL
+            "Version": datetime.date.today().isoformat(),
             "Organism": self.organism
         })
-        ET.SubElement(root, "Graphics", {"BoardWidth": "500.0", "BoardHeight": "800.0"})
-                                                                                # ADD to change this according to total height/width
-
+        ET.SubElement(root, "Graphics", {"BoardWidth": "1000.0", "BoardHeight": "1000.0"}) # ADD to change this according to total height/width                                                              
         for node in self.nodes.values():
             root.append(node.to_gpml())
         for inter in self.interactions:
             root.append(inter.to_gpml())
-
         ET.SubElement(root, "InfoBox", {"CenterX": "0.0", "CenterY":"0.0"})
         ET.SubElement(root, "Biopax")
         return root
         
     def save(self, filename):
-        tree = ET.ElementTree(self.to_gpml())
-             # ET.ElementTree(element) > turns a root node into an entire tree
-             #                         > we can then save the file with tree.write()
-        tree.write(filename, encoding="UTF-8", xml_declaration=True)
+        xml_str = ET.tostring(self.to_gpml(), encoding="utf-8")
+        pretty_xml = minidom.parseString(xml_str).toprettyxml(indent="  ")
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(pretty_xml)
 
 ############################## PARSING ########################################
 
@@ -147,7 +156,6 @@ def parse_csv_to_pathway(csv_file, title="New Pathway"):
         for row in reader:
             node = Node(row["Node Type"], row["Node Label"], row["Database"], row["Database_ID"])
             pathway.add_node(node)
-
             if row["Interaction Type"] and row["Interaction With"]:
                 interactions_data.append((row["Node Label"], row["Interaction With"], row["Interaction Type"]))
 
@@ -158,47 +166,16 @@ def parse_csv_to_pathway(csv_file, title="New Pathway"):
 
     return pathway
 
-
-
-def assign_layout(pathway):
-    # Build graph
-    G = nx.DiGraph()
-    for node_id, node in pathway.nodes.items():
-        G.add_node(node_id)
-    for interaction in pathway.interactions:
-        G.add_edge(interaction.source.label, interaction.target.label)
-
-    # Compute layout
-    pos = nx.spring_layout(G, k=2, scale=500)  # k controls spacing, scale sets max coords
-
-    # Assign coordinates to nodes
-    for label, (x, y) in pos.items():
-        node = pathway.nodes[label]
-        node.x = float(x)
-        node.y = float(y)
-
-    # Also update interaction points
-    for interaction in pathway.interactions:
-        interaction.points = [
-            {"X": str(interaction.source.x), "Y": str(interaction.source.y),
-            "GraphRef": interaction.source.graph_id, "RelX": "0.0", "RelY": "1.0"},
-            {"X": str(interaction.target.x), "Y": str(interaction.target.y),
-            "GraphRef": interaction.target.graph_id, "RelX": "0.0", "RelY": "-1.0",
-            "ArrowHead": "mim-conversion"}
-        ]
-
 ############################### USAGE  ########################################
 
 if __name__ == "__main__":
     csv_file = "ruta_facil.csv"
     pathway = parse_csv_to_pathway(csv_file, "ruta_facil.csv")
+    pathway.assign_layout()                                     # Node gets coordinates from this layout
     pathway.save("ruta_facil2.gpml")
 
 
-xml_str = ET.tostring(pathway.to_gpml(), encoding ="utf-8")                    # hacer esto incorporado en el codigo
-pretty_xml = minidom.parseString(xml_str).toprettyxml(indent="  ") 
-with open ("ruta_facil2.gpml", "w", encoding="utf-8") as f:
-    f.write(pretty_xml)
+
 
 # cd C:\\Users\\deyan\\Desktop\\BIOINFORMÁTICA\\1TFM
 

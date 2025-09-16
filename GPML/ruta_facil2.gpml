@@ -1,0 +1,54 @@
+<?xml version="1.0" ?>
+<Pathway xmlns="http://pathvisio.org/GPML/2013a" Name="ruta_facil.csv" Version="2025-09-16" Organism="Homo sapiens">
+  <Graphics BoardWidth="1000.0" BoardHeight="1000.0"/>
+  <DataNode TextLabel="Metabolite 1" GraphId="id28671" Type="Metabolite">
+    <Graphics CenterX="100" CenterY="100" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff"/>
+    <Xref Database="ChEBI" ID="CHEBI:17500"/>
+  </DataNode>
+  <DataNode TextLabel="Metabolite 2" GraphId="id28799" Type="Metabolite">
+    <Graphics CenterX="100" CenterY="100" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff"/>
+    <Xref Database="ChEBI" ID="CHEBI:16466"/>
+  </DataNode>
+  <DataNode TextLabel="Metabolite 3" GraphId="id55647" Type="Metabolite">
+    <Graphics CenterX="100" CenterY="100" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff"/>
+    <Xref Database="ChEBI" ID="CHEBI:12345"/>
+  </DataNode>
+  <DataNode TextLabel="Metabolite 4" GraphId="id54446" Type="Metabolite">
+    <Graphics CenterX="100" CenterY="100" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff"/>
+    <Xref Database="ChEBI" ID="CHEBI:67890"/>
+  </DataNode>
+  <DataNode TextLabel="Enzyme 1" GraphId="id34781" Type="GeneProduct">
+    <Graphics CenterX="100" CenterY="100" Width="106.0" Height="25.0" FontSize="12" Valign="Middle" Color="000000"/>
+    <Xref Database="Ensembl" ID="ENSG00000099377"/>
+  </DataNode>
+  <DataNode TextLabel="Enzyme 2" GraphId="id49909" Type="GeneProduct">
+    <Graphics CenterX="100" CenterY="100" Width="106.0" Height="25.0" FontSize="12" Valign="Middle" Color="000000"/>
+    <Xref Database="Ensembl" ID="ENSG00000012345"/>
+  </DataNode>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="100" Y="100" GraphRef="id28671" RelX="0.0" RelY="1.0"/>
+      <Point X="100" Y="100" GraphRef="id28799" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion"/>
+      <Anchor Position="0.4" Shape="None"/>
+    </Graphics>
+    <Xref Database="" ID=""/>
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="100" Y="100" GraphRef="id28799" RelX="0.0" RelY="1.0"/>
+      <Point X="100" Y="100" GraphRef="id55647" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion"/>
+      <Anchor Position="0.4" Shape="None"/>
+    </Graphics>
+    <Xref Database="" ID=""/>
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="100" Y="100" GraphRef="id28799" RelX="0.0" RelY="1.0"/>
+      <Point X="100" Y="100" GraphRef="id54446" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion"/>
+      <Anchor Position="0.4" Shape="None"/>
+    </Graphics>
+    <Xref Database="" ID=""/>
+  </Interaction>
+  <InfoBox CenterX="0.0" CenterY="0.0"/>
+  <Biopax/>
+</Pathway>
