@@ -27,7 +27,7 @@ class Node:
             "GraphId": self.graph_id,
             "Type": node_type
         })
-        graphics = ET.SubElement(datanode, "Graphics", {
+        ET.SubElement(datanode, "Graphics", {
             "CenterX": str(self.x),
             "CenterY": str(self.y),
             "Width": str(self.width),
@@ -36,7 +36,7 @@ class Node:
             "Valign": "Middle", 
             "Color": "0000ff" if node_type == "Metabolite" else "000000" 
         })
-        xref = ET.SubElement(datanode, "Xref", {
+        ET.SubElement(datanode, "Xref", {
             "Database": self.database,
             "ID": self.db_id
         })
@@ -50,25 +50,47 @@ class Interaction:
         self.source = source
         self.target = target
         self.type = interaction_type
+        self.graph_id = f"id{uuid.uuid4().hex[:8]}"
+        self.anchor_id = None  # only for conversions
 
     def to_gpml(self):
-        interaction = ET.Element("Interaction")
+        interaction = ET.Element("Interaction"), {"GraphID": self.graph_id}
                     # ET.Element(tag, attrib)
         graphics = ET.SubElement(interaction, "Graphics", {"LineThickness": "1.0"})
                  # ET.SubElement(parent, tag, attrib)
+        
+        # source point         
         ET.SubElement(graphics, "Point", {      # define arrow source
             "X": str(self.source.x),
             "Y": str(self.source.y),
             "GraphRef": self.source.graph_id,
             "RelX": "0.0", "RelY": "1.0"
         })
-        ET.SubElement(graphics, "Point", {      # define arrow target
+
+        # target point
+        target_point = {
             "X": str(self.target.x),
             "Y": str(self.target.y),
             "GraphRef": self.target.graph_id,
             "RelX": "0.0", "RelY": "-1.0",
-            "ArrowHead": "mim-conversion" if self.type == "Conversion" else "mim-catalysis"
-        })
+            }
+
+        if self.type.lower() == "conversion":
+            target_point["ArrowHead"] = "mim-conversion"
+            ET.SubElement(graphics, "Point", target_point)
+
+            # add anchor in middle
+            self.anchor_id = uuid.uuid4().hex[:5]
+            ET.SubElement(graphics, "Anchor", {
+                "Position": "0.4",
+                "Shape": "None",
+                "GraphId": self.anchor_id
+            })
+
+        elif self.type.lower() == "catalysis":
+            target_point["ArrowHead"] = "mim-catalysis"
+            ET.SubElement(graphics, "Point", target_point)
+
         ET.SubElement(interaction, "Xref", {"Database": "", "ID":""})
         return interaction
 
