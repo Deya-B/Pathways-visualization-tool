@@ -6,7 +6,7 @@ import datetime
 import uuid
 
 ################################ NODE #########################################
-# Metabolite(Node) and enzyme(Node) > inherit from Node
+# Metabolite(Node) and enzyme(Node)
 
 class Node:
     """
@@ -68,9 +68,7 @@ class Interaction:
 
     def to_gpml(self):
         interaction = ET.Element("Interaction")
-                    # ET.Element(tag, attrib)
         graphics = ET.SubElement(interaction, "Graphics", {"LineThickness": "1.0"})
-                 # ET.SubElement(parent, tag, attrib)
         
         # source point         
         ET.SubElement(graphics, "Point", {      # define arrow source
