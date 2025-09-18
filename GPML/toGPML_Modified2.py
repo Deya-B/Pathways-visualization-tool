@@ -32,7 +32,7 @@ class IDGenerator:
         self.counters[p] += 1
         return f"{p}{self.counters[p]:04d}"     
 
-idgenerator = IDGenerator
+idgenerator = IDGenerator()
 
 ################################ NODE #########################################
 # Metabolite(Node) and enzyme(Node)
@@ -105,6 +105,9 @@ class Interaction:
     def compute_anchor_xy(self):
         """Coordenadas del ancla sobre la línea source-target."""
         if self.type != "conversion":
+            return None
+        if (self.source.x is None or self.source.y is None or
+            self.target.x is None or self.target.y is None):
             return None
         x1 = self.source.x
         y1 = self.source.y + self.source.height / 2.0                          
@@ -217,26 +220,22 @@ class Pathway:
         """
         For each conversion with an anchor, place its enzymes perpendicular to the edge
         at ENZYME_OFFSET px of the anchor (stacked if there are multiple).
-        """
-        for (s_lbl, t_lbl), conv in self._conv_key_to_inter.items():           
-            if conv._anchor_xy is None:
-                conv.compute_anchor_xy()
+        """          
+        for (s_lbl, t_lbl), conv in self._conv_key_to_inter.items():
+            if conv._anchor_xy is None: # do not place enzymes if there's no anchor
+                continue
             ax, ay = conv._anchor_xy
-            # conversion vector
             x1 = conv.source.x; y1 = conv.source.y + conv.source.height/2.0
             x2 = conv.target.x; y2 = conv.target.y - conv.target.height/2.0
             dx, dy = (x2 - x1), (y2 - y1)
-            # normalized perpendicular                                         
-            L = (dx*dx + dy*dy) ** 0.5 or 1.0 # normalize (length 1) to offset the enzyme a fixed distance 
-                                                # ENZYME_OFFSET from the anchor, orthogonal to the arrow
+            L = (dx*dx + dy*dy) ** 0.5 or 1.0
             px, py = (-dy/L, dx/L)
-
             enzymes = self._conv_key_to_catalysts.get((s_lbl, t_lbl), [])
             for k, enz_lbl in enumerate(enzymes):
-                if enz_lbl not in self.nodes: 
+                n = self.nodes.get(enz_lbl)
+                if not n: 
                     continue
-                n = self.nodes[enz_lbl]
-                off = ENZYME_OFFSET + k*ENZYME_STACK_GAP # stacking of multiple enzymes
+                off = ENZYME_OFFSET + k*ENZYME_STACK_GAP
                 n.coords(ax + px*off, ay + py*off)
 
 
@@ -278,7 +277,19 @@ class Pathway:
         for e in self.interactions:
             if e.type == "conversion":
                 e.compute_anchor_xy()
-        self._place_enzymes_near_anchors() # reposition enzymes next to the anchor
+
+        # synchronize catalysis with the anchor coordinates
+        anchor_xy = {
+            e.anchor_id: e._anchor_xy
+            for e in self.interactions
+            if e.type == "conversion" and e.anchor_id
+        }
+        for e in self.interactions:
+            if e.type == "catalysis":
+                e._anchor_xy = anchor_xy.get(e.anchor_id, e._anchor_xy)
+
+        # reposition enzymes near the anchor
+        self._place_enzymes_near_anchors()
 
 
     def to_etree(self):
@@ -322,7 +333,7 @@ class CSVPathwayParser:
         self.pending_catalysis = defaultdict(list)  # (src_lbl, tgt_lbl) -> [enzyme_lbl] 
     
     def read(self):
-        with open(csv_file, newline="", encoding="utf-8") as f:
+        with open(self.csv_file, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f, delimiter=",")
             for row in reader:
                 lbl = row["Node Label"]              
@@ -363,7 +374,7 @@ class CSVPathwayParser:
                     self.pathway.add_node(Node("Enzyme", enz_lbl, "", ""))
                 cat = Interaction(self.pathway.nodes[enz_lbl], None, "Catalysis",
                                   anchor_pos=conv.anchor_pos, anchor_id=conv.anchor_id)
-                cat._anchor_xy = conv.compute_anchor_xy()
+                # cat._anchor_xy = conv.compute_anchor_xy()
                 self.pathway.add_interaction(cat)
             self.pathway._conv_key_to_catalysts[key] = enz_list
         return self
