@@ -89,10 +89,10 @@ class Node:
 # Represents conversions or cathalysis from nodes
 
 class Interaction: 
-    def __init__(self, source, target, interaction_type):
-        self.source = source
-        self.target = target
-        self.type = interaction_type
+    def __init__(self, source, target, interaction_type, anchor_pos=0.5, anchor_id=None):
+        self.source = source                # Node
+        self.target = target                # Node (for conversion) or None if target=anchor
+        self.type = (interaction_type or "").lower()
         self.anchor_id = None  # only for conversions
 
     def coords(self):
