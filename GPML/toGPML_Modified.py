@@ -10,7 +10,7 @@ import uuid
 
 class Node:
     """
-    Contains all the Node properties.
+    Contains the Node properties.
     
     Attributes:
         Node Type: Type of element (Metabolite, Enzyme...)
@@ -24,15 +24,19 @@ class Node:
     """ 
 
     def __init__(self, node_type, label, database, db_id):
-        # all the node properties:
+        # Node properties:
         self.node_type = node_type      
         self.label = label
         self.database = database
         self.db_id = db_id
-        self.graph_id = f"id{hash(label) & 0xffff}"
+        self.graph_id = "id" + uuid.uuid5(
+            uuid.NAMESPACE_DNS, f"{node_type}|{label}|{database}|{db_id}").hex[:8]
         self.x, self.y = None, None
         self.width = 90.0 + len(label) * 2
         self.height = 25.0
+
+    def coords(self, x, y):
+        self.x, self.y = float(x), float(y)
 
     def to_gpml(self):
         node_type = "GeneProduct" if self.node_type.lower() == "enzyme" else "Metabolite"
@@ -66,18 +70,19 @@ class Interaction:
         self.type = interaction_type
         self.anchor_id = None  # only for conversions
 
+    def coords(self):
+        pass # Atención: para ser completado
+
     def to_gpml(self):
         interaction = ET.Element("Interaction")
         graphics = ET.SubElement(interaction, "Graphics", {"LineThickness": "1.0"})
-        
         # source point         
-        ET.SubElement(graphics, "Point", {      # define arrow source
+        ET.SubElement(graphics, "Point", {    
             "X": str(self.source.x),
             "Y": str(self.source.y),
             "GraphRef": self.source.graph_id,
             "RelX": "0.0", "RelY": "1.0"
         })
-
         # target point
         target_point = {
             "X": str(self.target.x),
@@ -85,19 +90,16 @@ class Interaction:
             "GraphRef": self.target.graph_id,
             "RelX": "0.0", "RelY": "-1.0",
             }
-
         if self.type.lower() == "conversion":
             target_point["ArrowHead"] = "mim-conversion"
             ET.SubElement(graphics, "Point", target_point)
-
-            # add anchor in middle
+            # add anchor in the middle
             self.anchor_id = uuid.uuid4().hex[:5]
             ET.SubElement(graphics, "Anchor", {
                 "Position": "0.4",
                 "Shape": "None"
             })
-
-        elif self.type.lower() == "catalysis":
+        elif self.type.lower() == "catalysis": # Atención: las flechas de catalisis no salen
             target_point["ArrowHead"] = "mim-catalysis"
             ET.SubElement(graphics, "Point", target_point)
 
@@ -105,36 +107,26 @@ class Interaction:
         return interaction
 
 ############################## PATHWAY ########################################
-# Add everything to a pathway (contains nodes + interactions) 
-# Export to GPML
+# Define the elements of "Pathway"
+# Adds nodes and interactions
+# Creates and saves the pathway itself
 
 class Pathway:  
     def __init__(self, title, organism="Homo sapiens"):
         self.title = title
         self.organism = organism
         self.nodes = {}
+        self._nodes_by_id_ = {}
         self.interactions = []
 
-    def add_node(self, node):
+    def add_node(self, node: Node):
         self.nodes[node.label] = node
+        self._nodes_by_id[node.graph_id] = node
 
-    def add_interaction(self, interaction):
-        self.interactions.append(interaction)
+    def add_interactions(self, inter: Interaction):
+        self.interactions.append(inter)
 
-    def assign_layout(self):
-        G = nx.DiGraph()
-        for node_id, node in self.nodes.items():
-            G.add_node(node_id)
-        for inter in self.interactions:
-            G.add_edge(inter.source.label, inter.target.label)
-
-        pos = nx.spring_layout(G, k=2, scale=400)
-        for label, (x, y) in pos.items():
-            node = self.nodes[label]
-            node.x = float(x * 500 + 250)   # rescale & center
-            node.y = float(y * 500 + 400)
-
-    def to_gpml(self):
+    def to_etree(self):
         """
         Define the elements of "Pathway" in GPML.
         
@@ -148,21 +140,60 @@ class Pathway:
             "Version": datetime.date.today().isoformat(),
             "Organism": self.organism
         })
-        
-        ET.SubElement(root, "Graphics", {"BoardWidth": "1000.0", "BoardHeight": "1000.0"}) # ADD to change this according to total height/width                                                              
+        ET.SubElement(root, "Graphics", {"BoardWidth": "1000.0", "BoardHeight": "1000.0"}) 
+                                      # ADD to change this according to total height/width
+        # nodes
         for node in self.nodes.values():
+            if node.x is None or node.y is None:
+                raise ValueError(f"Nodo sin coordenadas: {node.label}")
             root.append(node.to_gpml())
+        # interactions
         for inter in self.interactions:
             root.append(inter.to_gpml())
-        ET.SubElement(root, "InfoBox", {"CenterX": "0.0", "CenterY":"0.0"})
+        # xml finishing lines
+        ET.SubElement(root, "InfoBox", {"CenterX": "0.0", "CenterY": "0.0"})
         ET.SubElement(root, "Biopax")
         return root
+
+    def assign_layout(self):
+        """Layout BFS simple: capas en Y, orden por índice en X."""
+        if not self.nodes:
+            return
+        G = nx.Graph()
+        for n in self.nodes.values():
+            G.add_node(n.graph_id)
+        for e in self.interactions:
+            G.add_edge(e.source.graph_id, e.target.graph_id)
         
-    def save(self, filename):
-        xml_str = ET.tostring(self.to_gpml(), encoding="utf-8")
+        root_id = next(iter(self._nodes_by_id)) # first node
+        layers = list(nx.bfs_layers(G,[root_id])) if G.number_of_nodes() else []
+
+        margin = 120.0
+        layer_gap = 140.0
+        board_w = 1000.0
+
+        placed = set()
+        for ly, layer_nodes in enumerate(layers):
+            k = len(layer_nodes)
+            for i, gid in enumerate(layer_nodes):
+                node = self.nodes_by_id[gid]
+                x = margin + (i + 1) * ((board_w - 2 * margin) / (k + 1))
+                y = margin + ly * layer_gap
+                node.coords(x, y)
+                placed.add(gid)
+
+        # nodos aislados (si los hay)
+        rest = [n for gid, n in self._nodes_by_id.items() if gid not in placed]
+        for j, node in enumerate(rest):
+            node.coords(margin + (j + 1) * 160.0, margin + (len(layers) + 1) * layer_gap)
+
+    def save(filename):
+        xml_str = ET.tostring(self.to_gpml(), encoding="utf-8") # atención: el encoding no sale!
         pretty_xml = minidom.parseString(xml_str).toprettyxml(indent="  ")
         with open(filename, "w", encoding="utf-8") as f:
             f.write(pretty_xml)
+
+
 
 ############################## PARSING ########################################
 
@@ -173,19 +204,25 @@ def parse_csv_to_pathway(csv_file, title="New Pathway"):
     with open(csv_file, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter=",")
         for row in reader:
-            node = Node(row["Node Type"], row["Node Label"], row["Database"], row["Database_ID"])
-            pathway.add_node(node)
-            if row["Interaction Type"] and row["Interaction With"]:
+            node = Node(row["Node Type"], row["Node Label"], row.get("Database",""), row.get("Database_ID",""))
+            if row["Node Label"] not in pathway.nodes:
+                pathway.add_node(node)
+            # acumular interacciones (se conectan por etiqueta)
+            if row.get("Interaction Type") and row.get("Interaction With"):
                 interactions_data.append((row["Node Label"], row["Interaction With"], row["Interaction Type"]))
 
     for source_label, target_label, inter_type in interactions_data:
-        source = pathway.nodes[source_label]
-        target = pathway.nodes[target_label]
-        pathway.add_interaction(Interaction(source,target,inter_type))
+        try:
+            source = pathway.nodes[source_label]
+            target = pathway.nodes[target_label]
+        except KeyError as e:
+            raise KeyError(f"Etiqueta de nodo no encontrada en CSV: {e}")
+        pathway.add_interaction(Interaction(source, target, inter_type))
 
     return pathway
 
 
+############################## MAIN ###########################################
 
 if __name__ == "__main__":
     csv_file = "ruta_facil.csv"
