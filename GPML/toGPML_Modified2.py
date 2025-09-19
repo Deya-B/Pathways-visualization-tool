@@ -7,6 +7,12 @@ import uuid
 from collections import defaultdict
 
 
+# TODO: Add PEP 257 style (https://peps.python.org/pep-0257/) Docstrings 
+    #     + style guidelines (https://google.github.io/styleguide/pyguide.html)
+    # * For classes: what it represents + key attrs
+    # * For methods: what it does, args, returns, side-effects
+
+
 # ----- layout / board -----
 BOARD_MARGIN = 80.0     # margin around everything
 LAYER_GAP = 140.0       # vertical separation between BFS layers
@@ -16,6 +22,7 @@ ENZYME_STACK_GAP = 60.0 # separation between multiple enzymes on the same anchor
 
 ############################### ID GEN ########################################
 class IDGenerator: 
+    """Generate unique id"""
     def __init__(self):
         self.counters = defaultdict(int)        
     
@@ -30,7 +37,7 @@ class IDGenerator:
     def new(self, kind: str) -> str:
         p = self._prefix(kind)
         self.counters[p] += 1
-        return f"{p}{self.counters[p]:04d}"     
+        return f"{p}{self.counters[p]:04d}"  # p=prefix + 4 digits with leading 0's 
 
 idgenerator = IDGenerator()
 
@@ -38,34 +45,35 @@ idgenerator = IDGenerator()
 # Metabolite(Node) and enzyme(Node)
 
 class Node:
-    """
-    Contains the Node properties.
+    """GPML DataNode (metabolite or enzyme). Contains the Node properties.
     
     Attributes:
-        Node Type: Type of element (Metabolite, Enzyme...)
-        Label: Name of the element represented in that node.
-        Database: The database (DB) where is found (if applicable)
-        Database ID (db_id): ID of that element in the given DB.
-        Graph ID: Unique ID of the node in the pathway.
-        Coordinates: x and y coordinates of the node.
-        Width: the total length of the box with the node label.
-        Height: the total height of the box with the node label.
+        node_type: Semantic type, e.g. "Metabolite" or "Enzyme".
+        label: Display text.
+        database: Xref DB name.
+        db_id: Xref ID.
+        graph_id: Unique GraphId in GPML.
+        x, y: Center coordinates (PathVisio uses centers).
+        width, height: Node box size in pixels.
     """ 
 
     def __init__(self, node_type, label, database, db_id):
-        # Node properties:
         self.node_type = node_type      
         self.label = label
         self.database = database
         self.db_id = db_id
         self.graph_id = idgenerator.new(self.node_type)
-        # self.graph_id = "id" + uuid.uuid5(
-            # uuid.NAMESPACE_DNS, f"{node_type}|{label}|{database}|{db_id}").hex[:8]
         self.x, self.y = None, None
         self.width = 90.0 + len(label) * 2
         self.height = 25.0
+    
+    def coords(self, x: float, y: float) -> None: # makes sure we get floats
+        """Set center coordinates in pixels.
 
-    def coords(self, x, y):
+        Args:
+            x: Center X in pixels.
+            y: Center Y in pixels.
+        """
         self.x, self.y = float(x), float(y)
 
     def to_gpml(self):
@@ -95,15 +103,17 @@ class Node:
 
 class Interaction: 
     def __init__(self, source, target, interaction_type, anchor_pos=0.5, anchor_id=None):
-        self.source = source                # Node
-        self.target = target                # Node (for conversion) or None if target=anchor
+                        # TODO: anchor_pos default 0.5 and then in parser changes to 0.4 
+                            # The parser is overriding the default; pick a value to standardize on
+        self.source = source                # Source Node
+        self.target = target                # Target Node: if target=conversion | None: if target=anchor
         self.type = (interaction_type or "").lower()
         self.anchor_pos = float(anchor_pos)
-        self.anchor_id = anchor_id          # set for conversion; used as a destination in catalysis
+        self.anchor_id = anchor_id          # set for conversion > used as a destination in catalysis
         self._anchor_xy = None              # (x,y) calculated after having source/target coords
 
     def compute_anchor_xy(self):
-        """Coordenadas del ancla sobre la línea source-target."""
+        """Compute anchor coordinates on the source-target line."""
         if self.type != "conversion":
             return None
         if (self.source.x is None or self.source.y is None or
@@ -117,47 +127,65 @@ class Interaction:
         ay = y1 + self.anchor_pos * (y2 - y1)
         self._anchor_xy = (ax, ay)
         return self._anchor_xy
-
+            
     def to_gpml(self):
         interaction = ET.Element("Interaction")
         graphics = ET.SubElement(interaction, "Graphics", {"LineThickness": "1.0"})
 
-        if self.type.lower() == "conversion":
+        if self.type.lower() == "conversion": 
             # source point       
             ET.SubElement(graphics, "Point", {    
                 "X": str(self.source.x),
                 "Y": str(self.source.y + self.source.height/2.0), # lower edge of the origin node              
                 "GraphRef": self.source.graph_id, "RelX": "0.0", "RelY": "1.0"
             })
+                                                        # NOTE: Attachment point: 
+                                                            # left edge: (-1, 0) 
+                                                            # right: (1, 0)
+                                                            # top: (0, -1) 
+                                                            # bottom: (0, 1)
             # target point
-            target_point = {
+            ET.SubElement(graphics, "Point", {
                 "X": str(self.target.x),
                 "Y": str(self.target.y- self.target.height/2.0), # top edge of the destination node               
                 "GraphRef": self.target.graph_id, "RelX": "0.0", "RelY": "-1.0",
                 "ArrowHead": "mim-conversion"
-            }
-            ET.SubElement(graphics, "Point", target_point)
+            })
             
             # anchor with GraphId (to reference from Catalysis)
             if self.anchor_id is None:
                 self.anchor_id = idgenerator.new("anchor")
             if self._anchor_xy is None:
                 self.compute_anchor_xy()
-            ax, ay = self._anchor_xy    # anchor point > linear                                           
+            ax, ay = self._anchor_xy    # anchor point coords                                          
             ET.SubElement(graphics, "Anchor", {
-                "GraphId": self.anchor_id, "Position": str(self.anchor_pos), "Shape": "None"
+                "GraphId": self.anchor_id, 
+                "Position": str(self.anchor_pos), "Shape": "None"
             })
 
-        elif self.type.lower() == "catalysis":
-            # origin = enzyme (to nearest edge: use RelY=1 for simplicity)
-            ET.SubElement(graphics, "Point", {    
-                "X": str(self.source.x),
-                "Y": str(self.source.y + self.source.height/2.0),          
-                "GraphRef": self.source.graph_id, "RelX": "0.0", "RelY": "1.0"
-            })
-            # destination = ANCHOR of a conversion (GraphRef = anchor_id)
-            # X,Y of the anchor are optional if there is a GraphRef, but we give them the same
+        elif self.type.lower() == "catalysis": 
+            # destination=ANCHOR of a conversion
             ax, ay = self._anchor_xy if self._anchor_xy else (self.source.x, self.source.y) 
+
+            def side_relxy(node, tx, ty):
+                """Compute nearest side of enzyme to select the source for its arrow"""
+                dx, dy = tx - node.x, ty - node.y
+                if abs(dx) > abs(dy):
+                    # left/right
+                    return (-1.0, 0.0) if dx < 0 else (1.0, 0.0)  # left or right edge
+                else:
+                    # top/bottom
+                    return (0.0, -1.0) if dy < 0 else (0.0, 1.0)  # top or bottom edge
+        
+            rx, ry = side_relxy(self.source, ax, ay) # enzyme side
+
+            # origin at chosen side of enzyme
+            ET.SubElement(graphics, "Point", {    
+                "X": str(self.source.x), "Y": str(self.source.y),          
+                "GraphRef": self.source.graph_id, 
+                "RelX": str(rx), "RelY": str(ry)
+            })
+            # end at the anchor (GraphRef=anchor_id)
             ET.SubElement(graphics, "Point", {
                 "X": str(ax), "Y": str(ay),
                 "GraphRef": self.anchor_id, "RelX": "0.0", "RelY": "0.0",
@@ -388,7 +416,7 @@ if __name__ == "__main__":
     csv_file = "ruta_facil.csv"
     pw = CSVPathwayParser(csv_file, "ruta_facil.csv").read().build_interactions().result()
     pw.assign_layout()
-    pw.save("ruta_facil3.gpml")
+    pw.save("ruta_facil4.gpml")
 
 
 # cd C:\\Users\\deyan\\Desktop\\BIOINFORMÁTICA\\1TFM
