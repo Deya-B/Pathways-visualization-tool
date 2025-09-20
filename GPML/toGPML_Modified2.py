@@ -14,10 +14,10 @@ from collections import defaultdict
 
 
 # ----- layout / board -----
-BOARD_MARGIN = 80.0     # margin around everything
-LAYER_GAP = 140.0       # vertical separation between BFS layers
-COL_GAP = 160.0         # approximate horizontal separation
-ENZYME_OFFSET = 80.0    # perpendicular distance from the anchor to the enzyme
+BOARD_MARGIN = 100.0    # margin around everything
+LAYER_GAP = 100.0       # vertical separation between BFS layers
+COL_GAP = 140.0         # approximate horizontal separation
+ENZYME_OFFSET = 200.0     # perpendicular distance from the anchor to the enzyme
 ENZYME_STACK_GAP = 60.0 # separation between multiple enzymes on the same anchor
 
 ############################### ID GEN ########################################
@@ -206,8 +206,8 @@ class Pathway:
     def __init__(self, title, organism="Homo sapiens"):
         self.title = title
         self.organism = organism
-        self.nodes = {}             # label -> Node
-        self._nodes_by_id = {}      # graph_id -> Node
+        self.nodes = {}             # Node label
+        self._nodes_by_id = {}      # Node graph_id
         self.interactions = []
         # conversion mappings -> pending anchor and catalysis
         self._conv_key_to_inter = {}     # (src_label, tgt_label) -> Interaction(conversion) 
@@ -217,6 +217,7 @@ class Pathway:
     def add_node(self, node: Node):
         self.nodes[node.label] = node
         self._nodes_by_id[node.graph_id] = node
+        # These indices avoid O(n) scans and keep parsing, layout, and GPML writing simple and reliable
 
     def add_interaction(self, inter: Interaction):
         self.interactions.append(inter)
@@ -226,13 +227,13 @@ class Pathway:
         ys = []
         for n in self.nodes.values():                                
             if n.x is None: continue
-            xs += [n.x - n.width/2.0, n.x + n.width/2.0]
-            ys += [n.y - n.height/2.0, n.y + n.height/2.0]
+            xs += [n.x - n.width/2.0, n.x + n.width/2.0]    # left & right box edges
+            ys += [n.y - n.height/2.0, n.y + n.height/2.0]  # top & bottom box edges
         if not xs:
             return 1000.0, 1000.0
         w = (max(xs) - min(xs)) + 2*BOARD_MARGIN
         h = (max(ys) - min(ys)) + 2*BOARD_MARGIN
-        return max(w, 400.0), max(h, 400.0)
+        return max(w, 300.0), max(h, 300.0)
 
     def xml_beginning(self, board_w, board_h):
         root = ET.Element("Pathway", {
@@ -241,38 +242,71 @@ class Pathway:
             "Version": datetime.date.today().isoformat(),
             "Organism": self.organism
         })
-        ET.SubElement(root, "Graphics", {"BoardWidth": f"{board_w:.1f}", "BoardHeight": f"{board_h:.1f}"})
+        ET.SubElement(root, "Graphics", {
+                    "BoardWidth": f"{board_w:.1f}", 
+                    "BoardHeight": f"{board_h:.1f}"})
         return root
 
     def _place_enzymes_near_anchors(self):
         """
-        For each conversion with an anchor, place its enzymes perpendicular to the edge
-        at ENZYME_OFFSET px of the anchor (stacked if there are multiple).
+        Place enzymes next to each conversion's anchor on a horizontal offset left/right.
         """          
         for (s_lbl, t_lbl), conv in self._conv_key_to_inter.items():
             if conv._anchor_xy is None: # do not place enzymes if there's no anchor
                 continue
             ax, ay = conv._anchor_xy
-            x1 = conv.source.x; y1 = conv.source.y + conv.source.height/2.0
-            x2 = conv.target.x; y2 = conv.target.y - conv.target.height/2.0
-            dx, dy = (x2 - x1), (y2 - y1)
-            L = (dx*dx + dy*dy) ** 0.5 or 1.0
-            px, py = (-dy/L, dx/L)
+
             enzymes = self._conv_key_to_catalysts.get((s_lbl, t_lbl), [])
+            if not enzymes:
+                continue
+
+            # heuristic: place away from the graph centroid to reduce clutter
+            xs = [n.x for n in self.nodes.values()
+                if n.x is not None and n.node_type.lower() != "enzyme"]
+            cx = (sum(xs) / len(xs)) if xs else ax
+            side = 1.0 if ax < cx else - 1.0  # to the right if anchor is left of center
+                                              # else to the left
+                                            
+            # base offset vector
+            ux,uy = side, 0.0
+            
+            # stack enzymes VERTICALLY around the anchor y to avoid crossing the reaction line
+            m = len(enzymes)
             for k, enz_lbl in enumerate(enzymes):
                 n = self.nodes.get(enz_lbl)
-                if not n: 
+                if not n:
                     continue
-                off = ENZYME_OFFSET + k*ENZYME_STACK_GAP
-                n.coords(ax + px*off, ay + py*off)
+                # centered vertical stacking: ..., -1, 0, +1, ...
+                vstack = (k - (m - 1) / 2.0) * ENZYME_STACK_GAP
+                ex = ax + ux * ENZYME_OFFSET
+                ey = ay + vstack
+                n.coords(ex, ey)
+
+
+            # # original perpendicular placement
+            # x1 = conv.source.x; y1 = conv.source.y + conv.source.height/2.0
+            # x2 = conv.target.x; y2 = conv.target.y - conv.target.height/2.0
+            # dx, dy = (x2 - x1), (y2 - y1)
+            # L = (dx*dx + dy*dy) ** 0.5 or 1.0 # normalize length 
+            # px, py = (-dy/L, dx/L) # take a unit vector PERPENDICULAR to the reaction
+            # enzymes = self._conv_key_to_catalysts.get((s_lbl, t_lbl), [])
+            # for k, enz_lbl in enumerate(enzymes):
+            #     n = self.nodes.get(enz_lbl)
+            #     if not n: 
+            #         continue
+            #     off = ENZYME_OFFSET + k*ENZYME_STACK_GAP
+            #     n.coords(ax + px*off, ay + py*off)
 
 
     def assign_layout(self):
         """Layout BFS for metabolites/products; 
         The enzymes are then placed next to the anchor."""
+
+        board_w, board_h = self._compute_board_size()
+
         if not self.nodes:
             return
-        # graph only with metabolites (not enzymes) so the skeleton is clean
+        # A) Build “skeleton” graph: only metabolites+conversion edges
         G = nx.Graph()
         for n in self.nodes.values():
             if n.node_type.lower() == "enzyme":
@@ -282,31 +316,44 @@ class Pathway:
             if e.type == "conversion":
                 G.add_edge(e.source.graph_id, e.target.graph_id)
         
-        # BFS layers                            
+        # B) BFS layering (topology > rows)                            
         layers = list(nx.bfs_layers(G, [next(iter(G.nodes))])) if G.number_of_nodes() else []
                      # returns lists of nodes by depth from a root
-        # place by layers
-        placed = set()       # saves the graph_ids already positioned (metabolites)                                                    
+
+        # C) Place metabolites row-by-row (grid)
+        # placed = set() # save graph_ids already positioned (metabolites)                                                    
+        # for ly, layer_nodes in enumerate(layers):
+        #     for i, gid in enumerate(layer_nodes):
+        #         node = self._nodes_by_id[gid]
+        #         x = BOARD_MARGIN + i * COL_GAP
+        #         y = BOARD_MARGIN + ly * LAYER_GAP # LAYER_GAP places each layer in a row separated by COL_GAP
+        #         node.coords(x, y)
+        #         placed.add(gid)
+
+        # C) Place metabolites row-by-row (grid)
+        placed = set()
         for ly, layer_nodes in enumerate(layers):
+            k = len(layer_nodes)
             for i, gid in enumerate(layer_nodes):
                 node = self._nodes_by_id[gid]
-                x = BOARD_MARGIN + i * COL_GAP
-                y = BOARD_MARGIN + ly * LAYER_GAP # LAYER_GAP places each layer in a row separated by COL_GAP
+                x = BOARD_MARGIN + (i + 1) * ((board_w - 2 * BOARD_MARGIN) / (k + 1))
+                y = BOARD_MARGIN + ly * LAYER_GAP
                 node.coords(x, y)
                 placed.add(gid)
+        
 
-        #  remaining nodes (includes enzymes, isolates, etc.)
+        # D) Temporarily place the rest (enzymes or others) on an extra row
         rest = [n for gid, n in self._nodes_by_id.items() if gid not in placed] # remaining graph_ids (enzymes) are left aside
         for j, node in enumerate(rest):
             node.coords(BOARD_MARGIN + j * COL_GAP, 
                         BOARD_MARGIN + (len(layers) + 1) * LAYER_GAP)          
         
-        # calculate conversion anchors (for catalysis) and place enzymes nearby
+        # E) Compute anchors on placed reactions
         for e in self.interactions:
             if e.type == "conversion":
                 e.compute_anchor_xy()
 
-        # synchronize catalysis with the anchor coordinates
+        # F) Synchronize catalysis interactions with those anchor coordinates
         anchor_xy = {
             e.anchor_id: e._anchor_xy
             for e in self.interactions
@@ -316,38 +363,37 @@ class Pathway:
             if e.type == "catalysis":
                 e._anchor_xy = anchor_xy.get(e.anchor_id, e._anchor_xy)
 
-        # reposition enzymes near the anchor
+        # G) Finally, move enzymes next to their reaction anchors
         self._place_enzymes_near_anchors()
 
 
     def to_etree(self):
-        # recalculate board size once everything is positioned
         board_w, board_h = self._compute_board_size()
         root = self.xml_beginning(board_w, board_h)
 
-        # nodos
+        # A) Nodes
         for node in self.nodes.values():
             if node.x is None or node.y is None:
                 raise ValueError(f"Nodo sin coordenadas: {node.label}")
             root.append(node.to_gpml())
 
-        # interacciones
+        # B) Interactions
         for inter in self.interactions:
             root.append(inter.to_gpml())
 
-        # xml finishing lines
+        # C) xml finishing lines
         ET.SubElement(root, "InfoBox", {"CenterX": "0.0", "CenterY": "0.0"})
         ET.SubElement(root, "Biopax")
         return root
 
 
-
     def save(self, filename):
-        xml_str = ET.tostring(self.to_etree(), encoding="utf-8") # atención: el encoding no sale!
-        pretty_xml = minidom.parseString(xml_str).toprettyxml(indent="  ")
-        with open(filename, "w", encoding="utf-8") as f:
-            f.write(pretty_xml)
-
+        tree = ET.ElementTree(self.to_etree()) 
+        try:
+            ET.indent(tree, space="  ") # Python ≥ 3.9
+        except AttributeError:
+            pass
+        tree.write(filename, encoding="utf-8", xml_declaration=True)
 
 
 ############################## PARSING ########################################
@@ -416,7 +462,7 @@ if __name__ == "__main__":
     csv_file = "ruta_facil.csv"
     pw = CSVPathwayParser(csv_file, "ruta_facil.csv").read().build_interactions().result()
     pw.assign_layout()
-    pw.save("ruta_facil4.gpml")
+    pw.save("ruta_facil_8.gpml")
 
 
 # cd C:\\Users\\deyan\\Desktop\\BIOINFORMÁTICA\\1TFM
