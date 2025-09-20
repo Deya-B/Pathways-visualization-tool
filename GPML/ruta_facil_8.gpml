@@ -1,0 +1,75 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Pathway xmlns="http://pathvisio.org/GPML/2013a" Name="ruta_facil.csv" Version="2025-09-20" Organism="Homo sapiens">
+  <Graphics BoardWidth="643.3" BoardHeight="425.0" />
+  <DataNode TextLabel="Metabolite 1" GraphId="m0001" Type="Metabolite">
+    <Graphics CenterX="500.0" CenterY="100.0" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff" />
+    <Xref Database="ChEBI" ID="CHEBI:17500" />
+  </DataNode>
+  <DataNode TextLabel="Metabolite 2" GraphId="m0002" Type="Metabolite">
+    <Graphics CenterX="500.0" CenterY="200.0" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff" />
+    <Xref Database="" ID="" />
+  </DataNode>
+  <DataNode TextLabel="Metabolite 3" GraphId="m0003" Type="Metabolite">
+    <Graphics CenterX="366.6666666666667" CenterY="300.0" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff" />
+    <Xref Database="" ID="" />
+  </DataNode>
+  <DataNode TextLabel="Metabolite 4" GraphId="m0004" Type="Metabolite">
+    <Graphics CenterX="633.3333333333334" CenterY="300.0" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff" />
+    <Xref Database="" ID="" />
+  </DataNode>
+  <DataNode TextLabel="Enzyme 1" GraphId="e0001" Type="GeneProduct">
+    <Graphics CenterX="300.0" CenterY="142.5" Width="106.0" Height="25.0" FontSize="12" Valign="Middle" Color="000000" />
+    <Xref Database="Ensembl" ID="ENSG00000099377" />
+  </DataNode>
+  <DataNode TextLabel="Enzyme 2" GraphId="e0002" Type="GeneProduct">
+    <Graphics CenterX="353.33333333333337" CenterY="242.5" Width="106.0" Height="25.0" FontSize="12" Valign="Middle" Color="000000" />
+    <Xref Database="Ensembl" ID="ENSG00000012345" />
+  </DataNode>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="500.0" Y="112.5" GraphRef="m0001" RelX="0.0" RelY="1.0" />
+      <Point X="500.0" Y="187.5" GraphRef="m0002" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0001" Position="0.4" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="500.0" Y="212.5" GraphRef="m0002" RelX="0.0" RelY="1.0" />
+      <Point X="366.6666666666667" Y="287.5" GraphRef="m0003" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0002" Position="0.4" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="500.0" Y="212.5" GraphRef="m0002" RelX="0.0" RelY="1.0" />
+      <Point X="633.3333333333334" Y="287.5" GraphRef="m0004" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0003" Position="0.4" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="300.0" Y="142.5" GraphRef="e0001" RelX="1.0" RelY="0.0" />
+      <Point X="500.0" Y="142.5" GraphRef="a0001" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="353.33333333333337" Y="242.5" GraphRef="e0002" RelX="1.0" RelY="0.0" />
+      <Point X="446.6666666666667" Y="242.5" GraphRef="a0002" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="353.33333333333337" Y="242.5" GraphRef="e0002" RelX="1.0" RelY="0.0" />
+      <Point X="553.3333333333334" Y="242.5" GraphRef="a0003" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <InfoBox CenterX="0.0" CenterY="0.0" />
+  <Biopax />
+</Pathway>
