@@ -112,20 +112,32 @@ class Interaction:
         self.type = (interaction_type or "").lower()
         self.anchor_pos = float(anchor_pos) if anchor_pos is not None else self.default_anchor_pos
         self.anchor_id = anchor_id          # set for conversion > used as a destination in catalysis
-        self._anchor_xy = None              # (x,y) calculated after having source/target coords
+        self._anchor_xy = None              # PRIVATE: to be computed ONLY when coordinates exist
+
+    def _can_compute_anchor(self) -> bool:
+        """Error handling"""
+        return (
+            self.type == "conversion"
+            and self.source.x is not None and self.source.y is not None
+            and self.target.x is not None and self.target.y is not None
+        )
 
     def compute_anchor_xy(self):
         """Compute anchor coordinates on the source-target line."""
-        if self.type != "conversion":
-            return None
-        if (self.source.x is None or self.source.y is None or
-            self.target.x is None or self.target.y is None):
+        if not self._can_compute_anchor():
             return None
         x1 = self.source.x; y1 = self.source.y + self.source.height/2.0                          
         x2 = self.target.x; y2 = self.target.y - self.target.height/2.0
         ax = x1 + self.anchor_pos * (x2 - x1)
         ay = y1 + self.anchor_pos * (y2 - y1)
         self._anchor_xy = (ax, ay)
+        return self._anchor_xy
+    
+    @property
+    def anchor_xy(self):
+        """Safe, lazy read: computes after layout; otherwise returns None."""
+        if self._anchor_xy is None and self._can_compute_anchor():
+            self.compute_anchor_xy()
         return self._anchor_xy
 
     def bind_to_anchor(self, anchor_id, xy=None):
@@ -258,9 +270,10 @@ class Pathway:
         Place enzymes next to each conversion's anchor on a horizontal offset left/right.
         """          
         for (s_lbl, t_lbl), conv in self._conv_key_to_inter.items():
-            if conv._anchor_xy is None: # do not place enzymes if there's no anchor
+            axay = conv.anchor_xy
+            if not axay: # do not place enzymes if there's no anchor
                 continue
-            ax, ay = conv._anchor_xy
+            ax, ay = axay
 
             enzymes = self._conv_key_to_catalysts.get((s_lbl, t_lbl), [])
             if not enzymes:
@@ -357,18 +370,17 @@ class Pathway:
         # E) Compute anchors on placed reactions
         for e in self.interactions:
             if e.type == "conversion":
-                e.compute_anchor_xy()
+                _ = e.anchor_xy
 
         # F) Synchronize catalysis interactions with those anchor coordinates
         anchor_xy = {
-            e.anchor_id: e._anchor_xy
+            e.anchor_id: e.anchor_xy
             for e in self.interactions
-            if e.type == "conversion" and e.anchor_id
+            if e.type == "conversion" and e.anchor_id and e.anchor_xy
         }
         for e in self.interactions:
             if e.type == "catalysis"and e.anchor_id in anchor_xy:
                 e.bind_to_anchor(e.anchor_id, anchor_xy[e.anchor_id])
-                # e._anchor_xy = anchor_xy.get(e.anchor_id, e._anchor_xy)
 
         # G) Finally, move enzymes next to their reaction anchors
         self._place_enzymes_near_anchors()
@@ -454,8 +466,6 @@ class CSVPathwayParser:
                 if enz_lbl not in self.pathway.nodes:
                     self.pathway.add_node(Node("Enzyme", enz_lbl, "", ""))
                 cat = Interaction(self.pathway.nodes[enz_lbl], None, "Catalysis")
-                                #   ,anchor_pos=conv.anchor_pos, anchor_id=conv.anchor_id)
-                # cat._anchor_xy = conv.compute_anchor_xy()
                 cat.bind_to_anchor(conv.anchor_id)
                 self.pathway.add_interaction(cat)
             self.pathway._conv_key_to_catalysts[key] = enz_list
@@ -472,7 +482,5 @@ if __name__ == "__main__":
     pw.assign_layout()
     pw.save("ruta_facil_8.gpml")
 
-
 # cd C:\\Users\\deyan\\Desktop\\BIOINFORMÁTICA\\1TFM
-
-
+# cd C:\\Users\\deyan\\GitHub\\Pathways-visualization-tool\\GPML
