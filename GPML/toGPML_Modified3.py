@@ -26,6 +26,7 @@ class IDGenerator:
     def __init__(self):
         self.counters = defaultdict(int)        
     
+
     def _prefix(self, kind: str) -> str:         
         k = (kind or "").lower()
         if k in {"enzyme", "geneproduct", "gene", "protein", "e"}: return "e"
@@ -33,6 +34,7 @@ class IDGenerator:
         if k in {"anchor", "a"}:                                   return "a"
         if k in {"interaction", "edge", "i"}:                      return "i"
         return "n"
+
 
     def new(self, kind: str) -> str:
         p = self._prefix(kind)
@@ -67,6 +69,7 @@ class Node:
         self.width = 90.0 + len(label) * 2
         self.height = 25.0
     
+
     def coords(self, x: float, y: float) -> None: # makes sure we get floats
         """Set center coordinates in pixels.
 
@@ -75,6 +78,7 @@ class Node:
             y: Center Y in pixels.
         """
         self.x, self.y = float(x), float(y)
+
 
     def to_gpml(self):
         node_type = "GeneProduct" if self.node_type.lower() == "enzyme" else "Metabolite"
@@ -103,7 +107,6 @@ class Node:
 
 class Interaction: 
     default_anchor_pos = 0.4
-
     def __init__(self, source, target, interaction_type, anchor_pos=None, anchor_id=None):
         self.source = source                # Source Node
         self.target = target                # Target Node: if target=conversion | None: if target=anchor
@@ -112,6 +115,7 @@ class Interaction:
         self.anchor_id = anchor_id          # set for conversion > used as a destination in catalysis
         self._anchor_xy = None              # private: to be computed ONLY if coordinates exist
 
+
     def _can_compute_anchor(self) -> bool:
         """Error handling"""
         return (
@@ -119,6 +123,7 @@ class Interaction:
             and self.source.x is not None and self.source.y is not None
             and self.target.x is not None and self.target.y is not None
         )
+
 
     def compute_anchor_xy(self):
         """Compute anchor coordinates on the source-target line."""
@@ -131,6 +136,7 @@ class Interaction:
         self._anchor_xy = (ax, ay)
         return self._anchor_xy
     
+
     @property
     def anchor_xy(self):
         """Safe, lazy read: computes after layout; otherwise returns None."""
@@ -138,11 +144,13 @@ class Interaction:
             self.compute_anchor_xy()
         return self._anchor_xy
 
+
     def bind_to_anchor(self, anchor_id, xy=None):
         """Public API to attach an interaction to an anchor."""
         self.anchor_id = anchor_id
         if xy is not None:
             self._anchor_xy = xy
+
 
     def to_gpml(self):
         interaction = ET.Element("Interaction")
@@ -184,6 +192,7 @@ class Interaction:
             axay = self.anchor_xy
             ax, ay = axay if axay else (self.source.x, self.source.y)
 
+
             def side_relxy(node, tx, ty):
                 """Compute nearest side of enzyme to select the source for its arrow"""
                 dx, dy = tx - node.x, ty - node.y
@@ -214,10 +223,11 @@ class Interaction:
 
 ############################## PATHWAY ########################################
 # Define the elements of "Pathway"
-# Adds nodes and interactions
-# Places enzymes close to anchors
-# Creates and saves the pathway itself
 # Computes canvas size
+# Adds nodes and interactions
+# Assigns layout and creates adequate coordinates according to pathway
+# Places enzymes
+# Creates and saves the pathway itself
 
 class Pathway:  
     def __init__(self, title, organism="Homo sapiens"):
@@ -233,34 +243,41 @@ class Pathway:
         self._conv_key_to_inter = {}     # (src_label, tgt_label) -> Interaction(conversion) 
         self._conv_key_to_catalysts = {} # (src_label, tgt_label) -> [enzyme_labels]
 
+
     def ensure_layout(self):
         """Run layout once if not already done."""
         if not self._laid_out:
             self.assign_layout()
+
 
     def add_node(self, node: Node):
         self.nodes[node.label] = node
         self._nodes_by_id[node.graph_id] = node
         # These indices avoid O(n) scans and keep parsing, layout, and GPML writing simple and reliable
 
+
     def add_interaction(self, inter: Interaction):
         self.interactions.append(inter)
         
+
     def _compute_board_size(self):
         xs = []
         ys = []
         # Using the node centre > compute node rectagle
-        # collect all left/right edges into xs and all top/bottom edges into ys
         for n in self.nodes.values():                                
-            if n.x is None: continue    #skip nodes with no coords
+            if n.x is None: continue #skip nodes with no coords
+            # collect all left/right edges into xs and all top/bottom edges into ys
             xs += [n.x - n.width/2.0, n.x + n.width/2.0]    # left/right edges
             ys += [n.y - n.height/2.0, n.y + n.height/2.0]  # top/bottom edges
+
         if not xs: # If nothing has coordinates yet, return a fallback board size
-            return 500.0, 500.0         # NOTE: THIS AFFECTS POSITIONING GREATLY
-        w = (max(xs) - min(xs)) + BOARD_MARGIN    # ancho total del contenido + margen
-        h = (max(ys) - min(ys)) + 2*BOARD_MARGIN    # altura total del contenido + margen
+            return 500.0, 500.0  
+
+        w = (max(xs) - min(xs)) + BOARD_MARGIN    
+        h = (max(ys) - min(ys)) + 2*BOARD_MARGIN    
         self.boardwidth = max(w, 300.0)
         self.boardheight = max(h, 300.0)
+
 
     def xml_beginning(self, board_w, board_h):
         root = ET.Element("Pathway", {
@@ -273,6 +290,7 @@ class Pathway:
                     "BoardWidth": f"{board_w:.1f}", 
                     "BoardHeight": f"{board_h:.1f}"})
         return root
+
 
     def _place_enzymes(self):
         """
@@ -307,7 +325,8 @@ class Pathway:
                 ex = sum(p[0] for p in pts) / len(pts)
                 ey = sum(p[1] for p in pts) / len(pts)
             self.nodes[enz_lbl].coords(ex, ey)
-            
+
+
     def assign_layout(self):
         """Layout BFS for metabolites/products; 
         then anchor & place enzymes; 
@@ -378,6 +397,7 @@ class Pathway:
 
         self._laid_out = True
 
+
     def to_etree(self):
         self.ensure_layout()
         root = self.xml_beginning(self.boardwidth, self.boardheight)
@@ -417,6 +437,7 @@ class CSVPathwayParser:
         self.conversions = []                       # [(src_lbl, tgt_lbl)]
         self.pending_catalysis = defaultdict(list)  # (src_lbl, tgt_lbl) -> [enzyme_lbl] 
     
+
     def read(self):
         with open(self.csv_file, newline="", encoding="utf-8") as f:
             reader = csv.DictReader(f, delimiter=",")
@@ -437,6 +458,7 @@ class CSVPathwayParser:
                     if row["Interaction With"] not in self.pathway.nodes:
                         self.pathway.add_node(Node("Metabolite", row["Interaction With"], "", ""))
         return self
+
 
     def build_interactions(self):
         # conversions (with anchor)
@@ -462,6 +484,7 @@ class CSVPathwayParser:
                 self.pathway.add_interaction(cat)
             self.pathway._conv_key_to_catalysts[key] = enz_list
         return self
+
 
     def result(self):
         return self.pathway
