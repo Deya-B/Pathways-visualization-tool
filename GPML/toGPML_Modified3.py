@@ -17,7 +17,7 @@ from collections import defaultdict
 BOARD_MARGIN = 100.0    # margin around everything
 LAYER_GAP = 100.0       # vertical separation between BFS layers
 COL_GAP = 140.0         # approximate horizontal separation
-ENZYME_OFFSET = 200.0     # distance from the anchor to the enzyme
+ENZYME_OFFSET = 0.0     # distance from the anchor to the enzyme
 ENZYME_STACK_GAP = 60.0 # separation between multiple enzymes on the same anchor
 
 ############################### ID GEN ########################################
@@ -105,14 +105,12 @@ class Interaction:
     default_anchor_pos = 0.4
 
     def __init__(self, source, target, interaction_type, anchor_pos=None, anchor_id=None):
-                        # TODO: anchor_pos default 0.5 and then in parser changes to 0.4 
-                            # The parser is overriding the default; pick a value to standardize on
         self.source = source                # Source Node
         self.target = target                # Target Node: if target=conversion | None: if target=anchor
         self.type = (interaction_type or "").lower()
         self.anchor_pos = float(anchor_pos) if anchor_pos is not None else self.default_anchor_pos
         self.anchor_id = anchor_id          # set for conversion > used as a destination in catalysis
-        self._anchor_xy = None              # PRIVATE: to be computed ONLY when coordinates exist
+        self._anchor_xy = None              # private: to be computed ONLY if coordinates exist
 
     def _can_compute_anchor(self) -> bool:
         """Error handling"""
@@ -224,6 +222,9 @@ class Pathway:
     def __init__(self, title, organism="Homo sapiens"):
         self.title = title
         self.organism = organism
+        self.boardwidth = None
+        self.boardheight = None
+        self._laid_out = False 
         self.nodes = {}             # Node label
         self._nodes_by_id = {}      # Node graph_id
         self.interactions = []
@@ -231,6 +232,10 @@ class Pathway:
         self._conv_key_to_inter = {}     # (src_label, tgt_label) -> Interaction(conversion) 
         self._conv_key_to_catalysts = {} # (src_label, tgt_label) -> [enzyme_labels]
 
+    def ensure_layout(self):
+        """Run layout once if not already done."""
+        if not self._laid_out:
+            self.assign_layout()
 
     def add_node(self, node: Node):
         self.nodes[node.label] = node
@@ -239,19 +244,22 @@ class Pathway:
 
     def add_interaction(self, inter: Interaction):
         self.interactions.append(inter)
-
+        
     def _compute_board_size(self):
         xs = []
         ys = []
+        # Using the node centre > compute node rectagle
+        # collect all left/right edges into xs and all top/bottom edges into ys
         for n in self.nodes.values():                                
-            if n.x is None: continue
-            xs += [n.x - n.width/2.0, n.x + n.width/2.0]    # left & right box edges
-            ys += [n.y - n.height/2.0, n.y + n.height/2.0]  # top & bottom box edges
-        if not xs:
-            return 1000.0, 1000.0
-        w = (max(xs) - min(xs)) + 2*BOARD_MARGIN
-        h = (max(ys) - min(ys)) + 2*BOARD_MARGIN
-        return max(w, 300.0), max(h, 300.0)
+            if n.x is None: continue    #skip nodes with no coords
+            xs += [n.x - n.width/2.0, n.x + n.width/2.0]    # left/right edges
+            ys += [n.y - n.height/2.0, n.y + n.height/2.0]  # top/bottom edges
+        if not xs: # If nothing has coordinates yet, return a fallback board size
+            return 500.0, 500.0         # NOTE: THIS AFFECTS POSITIONING GREATLY
+        w = (max(xs) - min(xs)) + BOARD_MARGIN    # ancho total del contenido + margen
+        h = (max(ys) - min(ys)) + 2*BOARD_MARGIN    # altura total del contenido + margen
+        self.boardwidth = max(w, 300.0)
+        self.boardheight = max(h, 300.0)
 
     def xml_beginning(self, board_w, board_h):
         root = ET.Element("Pathway", {
@@ -319,13 +327,13 @@ class Pathway:
 
     def assign_layout(self):
         """Layout BFS for metabolites/products; 
-        The enzymes are then placed next to the anchor."""
-
-        board_w, board_h = self._compute_board_size()
-
+        then anchor & place enzymes; 
+        finally compute board size."""
+        
         if not self.nodes:
             return
-        # A) Build “skeleton” graph: only metabolites+conversion edges
+            
+        # A) Skeleton graph (metabolites only)
         G = nx.Graph()
         for n in self.nodes.values():
             if n.node_type.lower() == "enzyme":
@@ -337,29 +345,25 @@ class Pathway:
         
         # B) BFS layering (topology > rows)                            
         layers = list(nx.bfs_layers(G, [next(iter(G.nodes))])) if G.number_of_nodes() else []
-                     # returns lists of nodes by depth from a root
+                                        # creates lists of nodes by depth from a root
 
         # C) Place metabolites row-by-row (grid)
-        # placed = set() # save graph_ids already positioned (metabolites)                                                    
-        # for ly, layer_nodes in enumerate(layers):
-        #     for i, gid in enumerate(layer_nodes):
-        #         node = self._nodes_by_id[gid]
-        #         x = BOARD_MARGIN + i * COL_GAP
-        #         y = BOARD_MARGIN + ly * LAYER_GAP # LAYER_GAP places each layer in a row separated by COL_GAP
-        #         node.coords(x, y)
-        #         placed.add(gid)
+        layers = list(nx.bfs_layers(G, [next(iter(G.nodes))])) if G.number_of_nodes() else []
+        k_max = max((len(L) for L in layers), default=1)
+        span_max = max(0, (k_max - 1) * COL_GAP) # width occupied by the widest row(layer)
 
-        # C) Place metabolites row-by-row (grid)
-        placed = set()
+        placed = set()                                # save graph_ids already positioned (metabolites) 
         for ly, layer_nodes in enumerate(layers):
             k = len(layer_nodes)
+            span = max(0, (k-1) * COL_GAP)
+            # shifts the row to center it within the width of the widest row
+            start_x =  BOARD_MARGIN + (span_max - span) / 2.0
+            y = BOARD_MARGIN + ly * LAYER_GAP
             for i, gid in enumerate(layer_nodes):
                 node = self._nodes_by_id[gid]
-                x = BOARD_MARGIN + (i + 1) * ((board_w - 2 * BOARD_MARGIN) / (k + 1))
-                y = BOARD_MARGIN + ly * LAYER_GAP
+                x = start_x + i * COL_GAP
                 node.coords(x, y)
                 placed.add(gid)
-        
 
         # D) Temporarily place the rest (enzymes or others) on an extra row
         rest = [n for gid, n in self._nodes_by_id.items() if gid not in placed] # remaining graph_ids (enzymes) are left aside
@@ -370,7 +374,7 @@ class Pathway:
         # E) Compute anchors on placed reactions
         for e in self.interactions:
             if e.type == "conversion":
-                _ = e.anchor_xy
+                _ = e.anchor_xy # triggers compute if possible
 
         # F) Synchronize catalysis interactions with those anchor coordinates
         anchor_xy = {
@@ -382,13 +386,17 @@ class Pathway:
             if e.type == "catalysis"and e.anchor_id in anchor_xy:
                 e.bind_to_anchor(e.anchor_id, anchor_xy[e.anchor_id])
 
-        # G) Finally, move enzymes next to their reaction anchors
+        # G) Move enzymes next to their reaction anchors
         self._place_enzymes_near_anchors()
+     
+        # H) Compute the FINAL board size now that everyone has coords
+        self._compute_board_size()
 
+        self._laid_out = True
 
     def to_etree(self):
-        board_w, board_h = self._compute_board_size()
-        root = self.xml_beginning(board_w, board_h)
+        self.ensure_layout()
+        root = self.xml_beginning(self.boardwidth, self.boardheight)
 
         # A) Nodes
         for node in self.nodes.values():
@@ -480,7 +488,7 @@ if __name__ == "__main__":
     csv_file = "ruta_facil.csv"
     pw = CSVPathwayParser(csv_file, "ruta_facil.csv").read().build_interactions().result()
     pw.assign_layout()
-    pw.save("ruta_facil_8.gpml")
+    pw.save("ruta_facil_9.gpml")
 
 # cd C:\\Users\\deyan\\Desktop\\BIOINFORMÁTICA\\1TFM
 # cd C:\\Users\\deyan\\GitHub\\Pathways-visualization-tool\\GPML
