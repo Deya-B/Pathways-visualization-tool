@@ -181,7 +181,8 @@ class Interaction:
 
         elif self.type.lower() == "catalysis": 
             # destination=ANCHOR of a conversion
-            ax, ay = self._anchor_xy if self._anchor_xy else (self.source.x, self.source.y) 
+            axay = self.anchor_xy
+            ax, ay = axay if axay else (self.source.x, self.source.y)
 
             def side_relxy(node, tx, ty):
                 """Compute nearest side of enzyme to select the source for its arrow"""
@@ -273,58 +274,40 @@ class Pathway:
                     "BoardHeight": f"{board_h:.1f}"})
         return root
 
-    def _place_enzymes_near_anchors(self):
+    def _place_enzymes(self):
         """
-        Place enzymes next to each conversion's anchor on a horizontal offset left/right.
-        """          
+        Place the enzymes at:
+        - the range of their conversion if they only catalyze one,
+        - the centroid (mean of X,Y) of all their ranges if they catalyze several.
+        """       
+        # 1) (src_label, tgt_label) -> (ax, ay) of the conversion
+        conv_to_xy = {}   
         for (s_lbl, t_lbl), conv in self._conv_key_to_inter.items():
             axay = conv.anchor_xy
-            if not axay: # do not place enzymes if there's no anchor
-                continue
-            ax, ay = axay
+            if axay:
+                conv_to_xy[(s_lbl, t_lbl)] = axay
 
-            enzymes = self._conv_key_to_catalysts.get((s_lbl, t_lbl), [])
-            if not enzymes:
+        # 2) map: enzyme -> list (ax, ay) of the reactions it catalyzes
+        enz_to_points = defaultdict(list)
+        for key, enz_list in self._conv_key_to_catalysts.items():
+            if key not in conv_to_xy:
                 continue
-
-            # heuristic: place away from the graph centroid to reduce clutter
-            xs = [n.x for n in self.nodes.values()
-                if n.x is not None and n.node_type.lower() != "enzyme"]
-            cx = (sum(xs) / len(xs)) if xs else ax
-            side = 1.0 if ax < cx else - 1.0  # to the right if anchor is left of center
-                                              # else to the left
-                                            
-            # base offset vector
-            ux,uy = side, 0.0
+            ax, ay = conv_to_xy[key]
+            for enz_lbl in enz_list:
+                if enz_lbl in self.nodes: #(defensive) ignore enzymes not created as a node 
+                    enz_to_points[enz_lbl].append((ax, ay))
+        
+        # 3) placing on anchor or in centroid
+        for enz_lbl, pts in enz_to_points.items():
+            if not pts:
+                continue
+            if len(pts) == 1:
+                ex, ey = pts[0]
+            else:
+                ex = sum(p[0] for p in pts) / len(pts)
+                ey = sum(p[1] for p in pts) / len(pts)
+            self.nodes[enz_lbl].coords(ex, ey)
             
-            # stack enzymes VERTICALLY around the anchor y to avoid crossing the reaction line
-            m = len(enzymes)
-            for k, enz_lbl in enumerate(enzymes):
-                n = self.nodes.get(enz_lbl)
-                if not n:
-                    continue
-                # centered vertical stacking: ..., -1, 0, +1, ...
-                vstack = (k - (m - 1) / 2.0) * ENZYME_STACK_GAP
-                ex = ax + ux * ENZYME_OFFSET
-                ey = ay + vstack
-                n.coords(ex, ey)
-
-
-            # # original perpendicular placement
-            # x1 = conv.source.x; y1 = conv.source.y + conv.source.height/2.0
-            # x2 = conv.target.x; y2 = conv.target.y - conv.target.height/2.0
-            # dx, dy = (x2 - x1), (y2 - y1)
-            # L = (dx*dx + dy*dy) ** 0.5 or 1.0 # normalize length 
-            # px, py = (-dy/L, dx/L) # take a unit vector PERPENDICULAR to the reaction
-            # enzymes = self._conv_key_to_catalysts.get((s_lbl, t_lbl), [])
-            # for k, enz_lbl in enumerate(enzymes):
-            #     n = self.nodes.get(enz_lbl)
-            #     if not n: 
-            #         continue
-            #     off = ENZYME_OFFSET + k*ENZYME_STACK_GAP
-            #     n.coords(ax + px*off, ay + py*off)
-
-
     def assign_layout(self):
         """Layout BFS for metabolites/products; 
         then anchor & place enzymes; 
@@ -349,16 +332,17 @@ class Pathway:
 
         # C) Place metabolites row-by-row (grid)
         layers = list(nx.bfs_layers(G, [next(iter(G.nodes))])) if G.number_of_nodes() else []
-        k_max = max((len(L) for L in layers), default=1)
-        span_max = max(0, (k_max - 1) * COL_GAP) # width occupied by the widest row(layer)
+        k_max = max((len(L) for L in layers), default=1)    # find widest row
+        span_max = max(0, (k_max - 1) * COL_GAP)            # width occupied by the widest row(layer)
 
         placed = set()                                # save graph_ids already positioned (metabolites) 
         for ly, layer_nodes in enumerate(layers):
-            k = len(layer_nodes)
-            span = max(0, (k-1) * COL_GAP)
-            # shifts the row to center it within the width of the widest row
+            k = len(layer_nodes)                # number of nodes in that row/layer
+            span = max(0, (k-1) * COL_GAP)      # row width
+            # 1) Calculate the initial offset to center this row within the width of the widest row
             start_x =  BOARD_MARGIN + (span_max - span) / 2.0
             y = BOARD_MARGIN + ly * LAYER_GAP
+            # 2) Place the nodes in the row:
             for i, gid in enumerate(layer_nodes):
                 node = self._nodes_by_id[gid]
                 x = start_x + i * COL_GAP
@@ -387,7 +371,7 @@ class Pathway:
                 e.bind_to_anchor(e.anchor_id, anchor_xy[e.anchor_id])
 
         # G) Move enzymes next to their reaction anchors
-        self._place_enzymes_near_anchors()
+        self._place_enzymes()
      
         # H) Compute the FINAL board size now that everyone has coords
         self._compute_board_size()
@@ -488,7 +472,7 @@ if __name__ == "__main__":
     csv_file = "ruta_facil.csv"
     pw = CSVPathwayParser(csv_file, "ruta_facil.csv").read().build_interactions().result()
     pw.assign_layout()
-    pw.save("ruta_facil_9.gpml")
+    pw.save("ruta_facil_12.gpml")
 
 # cd C:\\Users\\deyan\\Desktop\\BIOINFORMÁTICA\\1TFM
 # cd C:\\Users\\deyan\\GitHub\\Pathways-visualization-tool\\GPML
