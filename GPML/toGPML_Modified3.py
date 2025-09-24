@@ -87,7 +87,7 @@ class Node:
         self.db_id = db_id
         self.graph_id = idgenerator.new(self.node_type)
         self.x, self.y = None, None
-        self.width = 90.0 + len(label) * 2
+        self.width = 90.0 + len(label) * 4
         self.height = 25.0
     
 
@@ -260,7 +260,7 @@ class Interaction:
 ## Methods: (see below)
 
 class Pathway:  
-    def __init__(self, title, organism="Homo sapiens"):
+    def __init__(self, title, organism=None):
         self.title = title
         self.organism = organism
         self.boardwidth = None
@@ -467,15 +467,16 @@ class Pathway:
 ## Methods:
 
 class CSVPathwayParser:
-    def __init__(self, csv_file, title="New Pathway"):
+    def __init__(self, csv_file, title="New Pathway", organism="Homo sapiens", delimiter=None):
         self.csv_file = csv_file
-        self.pathway = Pathway(title)
+        self.pathway = Pathway(title, organism)
         self.conversions = []                       # [(src_lbl, tgt_lbl)]
-        self.pending_catalysis = defaultdict(list)  # (src_lbl, tgt_lbl) -> [enzyme_lbl] 
+        self.pending_catalysis = defaultdict(list)  # (src_lbl, tgt_lbl) -> [enzyme_lbl]
+        self.delimiter = delimiter
     
     def read(self):
         with open(self.csv_file, newline="", encoding="utf-8") as f:
-            reader = csv.DictReader(f, delimiter=",")
+            reader = csv.DictReader(f, delimiter=self.delimiter)
             for row in reader:
                 lbl = row["Node Label"]              
                 if lbl not in self.pathway.nodes:    
@@ -525,10 +526,10 @@ class CSVPathwayParser:
 ############################## MAIN ###########################################
 
 if __name__ == "__main__":
-    csv_file = "ruta_facil.csv"
-    pw = CSVPathwayParser(csv_file, "ruta_facil.csv").read().build_interactions().result()
+    csv_file = "ruta_media.csv"
+    pw = CSVPathwayParser(csv_file, "Bile_Acids", "mus-musculus", ";").read().build_interactions().result()
     pw.assign_layout()
-    pw.save("ruta_facil_12.gpml")
+    pw.save("ruta_media2.gpml")
 
 # cd C:\\Users\\deyan\\Desktop\\BIOINFORMÁTICA\\1TFM
 # cd C:\\Users\\deyan\\GitHub\\Pathways-visualization-tool\\GPML

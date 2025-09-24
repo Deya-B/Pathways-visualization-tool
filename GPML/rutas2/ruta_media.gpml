@@ -1,0 +1,121 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Pathway xmlns="http://pathvisio.org/GPML/2013a" Name="Bile_Acids" Version="2025-09-24" Organism="mus-musculus">
+  <Graphics BoardWidth="422.5" BoardHeight="525.0" />
+  <DataNode TextLabel="Cholesterol" GraphId="m0001" Type="Metabolite">
+    <Graphics CenterX="170.0" CenterY="100.0" Width="134.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff" />
+    <Xref Database="HMDB" ID="HMDB0000067" />
+  </DataNode>
+  <DataNode TextLabel="7-alpha-hydroxycholesterol" GraphId="m0002" Type="Metabolite">
+    <Graphics CenterX="170.0" CenterY="200.0" Width="194.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff" />
+    <Xref Database="" ID="" />
+  </DataNode>
+  <DataNode TextLabel="7alpha-hydroxycholest-4-en-3-one" GraphId="m0003" Type="Metabolite">
+    <Graphics CenterX="100.0" CenterY="300.0" Width="218.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff" />
+    <Xref Database="" ID="" />
+  </DataNode>
+  <DataNode TextLabel="7alpha-hydroxy-5beta-cholestan-3-one" GraphId="m0004" Type="Metabolite">
+    <Graphics CenterX="240.0" CenterY="300.0" Width="234.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff" />
+    <Xref Database="" ID="" />
+  </DataNode>
+  <DataNode TextLabel="7a,12a-Dihydroxy-cholestene-3-one" GraphId="m0005" Type="Metabolite">
+    <Graphics CenterX="100.0" CenterY="400.0" Width="222.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff" />
+    <Xref Database="" ID="" />
+  </DataNode>
+  <DataNode TextLabel="5beta-Cholesten-7alpha,12alpha-diol-3-one" GraphId="m0006" Type="Metabolite">
+    <Graphics CenterX="240.0" CenterY="400.0" Width="254.0" Height="25.0" FontSize="12" Valign="Middle" Color="0000ff" />
+    <Xref Database="" ID="" />
+  </DataNode>
+  <DataNode TextLabel="CYP7A1" GraphId="e0001" Type="GeneProduct">
+    <Graphics CenterX="170.0" CenterY="142.5" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="000000" />
+    <Xref Database="LMPD" ID="LMP000315" />
+  </DataNode>
+  <DataNode TextLabel="HSD3B7" GraphId="e0002" Type="GeneProduct">
+    <Graphics CenterX="142.0" CenterY="242.5" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="000000" />
+    <Xref Database="LMPD" ID="LMP000315" />
+  </DataNode>
+  <DataNode TextLabel="AKR1D1" GraphId="e0003" Type="GeneProduct">
+    <Graphics CenterX="219.0" CenterY="292.5" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="000000" />
+    <Xref Database="LMPD" ID="LMP000315" />
+  </DataNode>
+  <DataNode TextLabel="CYP8B1" GraphId="e0004" Type="GeneProduct">
+    <Graphics CenterX="100.0" CenterY="342.5" Width="114.0" Height="25.0" FontSize="12" Valign="Middle" Color="000000" />
+    <Xref Database="LMPD" ID="LMP000315" />
+  </DataNode>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="170.0" Y="112.5" GraphRef="m0001" RelX="0.0" RelY="1.0" />
+      <Point X="170.0" Y="187.5" GraphRef="m0002" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0001" Position="0.4" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="170.0" Y="212.5" GraphRef="m0002" RelX="0.0" RelY="1.0" />
+      <Point X="100.0" Y="287.5" GraphRef="m0003" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0002" Position="0.4" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="170.0" Y="212.5" GraphRef="m0002" RelX="0.0" RelY="1.0" />
+      <Point X="240.0" Y="287.5" GraphRef="m0004" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0003" Position="0.4" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="100.0" Y="312.5" GraphRef="m0003" RelX="0.0" RelY="1.0" />
+      <Point X="100.0" Y="387.5" GraphRef="m0005" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0004" Position="0.4" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="240.0" Y="312.5" GraphRef="m0004" RelX="0.0" RelY="1.0" />
+      <Point X="240.0" Y="387.5" GraphRef="m0006" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0005" Position="0.4" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="170.0" Y="142.5" GraphRef="e0001" RelX="0.0" RelY="1.0" />
+      <Point X="170.0" Y="142.5" GraphRef="a0001" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="142.0" Y="242.5" GraphRef="e0002" RelX="0.0" RelY="1.0" />
+      <Point X="142.0" Y="242.5" GraphRef="a0002" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="219.0" Y="292.5" GraphRef="e0003" RelX="0.0" RelY="-1.0" />
+      <Point X="198.0" Y="242.5" GraphRef="a0003" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="100.0" Y="342.5" GraphRef="e0004" RelX="0.0" RelY="1.0" />
+      <Point X="100.0" Y="342.5" GraphRef="a0004" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction>
+    <Graphics LineThickness="1.0">
+      <Point X="219.0" Y="292.5" GraphRef="e0003" RelX="0.0" RelY="1.0" />
+      <Point X="240.0" Y="342.5" GraphRef="a0005" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <InfoBox CenterX="0.0" CenterY="0.0" />
+  <Biopax />
+</Pathway>
