@@ -526,10 +526,7 @@ class CSVPathwayParser:
 ############################## MAIN ###########################################
 
 if __name__ == "__main__":
-    csv_file = "ruta_media.csv"
+    csv_file = "examples/data/ruta_media.csv"
     pw = CSVPathwayParser(csv_file, "Bile_Acids", "mus-musculus", ";").read().build_interactions().result()
     pw.assign_layout()
-    pw.save("ruta_media2.gpml")
-
-# cd C:\\Users\\deyan\\Desktop\\BIOINFORMÁTICA\\1TFM
-# cd C:\\Users\\deyan\\GitHub\\Pathways-visualization-tool\\GPML
+    pw.save("examples/gpml/ruta_media2.gpml")
