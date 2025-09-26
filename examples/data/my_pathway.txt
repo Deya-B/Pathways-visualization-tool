@@ -1,0 +1,7 @@
+Node_Label	Database	Database_ID	Interaction_With	Catalytic_Enzyme	Enzyme_DB	Enzyme_DB_ID
+Cholesterol	LMPD	LMST	7-alpha-hydroxycholesterol	CYP7A1	LMPD	LMP000315
+7-alpha-hydroxycholesterol	HMDB	HMDB0000067	7alpha-hydroxycholest-4-en-3-one	HSD3B7	LMPD	LMP000315
+7-alpha-hydroxycholesterol	HMDB	HMDB0000067	7alpha-hydroxy-5beta-cholestan-3-one	AKR1D1	LMPD	LMP000315
+7alpha-hydroxycholest-4-en-3-one	HMDB	HMDB0000068	"7a,12a-Dihydroxy-cholestene-3-one"	CYP8B1	LMPD	LMP000315
+7alpha-hydroxy-5beta-cholestan-3-one	HMDB	HMDB0000069				
+"7a,12a-Dihydroxy-cholestene-3-one"	HMDB	HMDB0000070				
