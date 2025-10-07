@@ -12,6 +12,11 @@ from collections import defaultdict
     # * For classes: what it represents + key attrs
     # * For methods: what it does, args, returns, side-effects
 
+# TODO: add DataNode "Pathway"  
+# <DataNode TextLabel="Glucose metabolism" GraphId="f8db5" Type="Pathway">
+#     <Graphics CenterX="178.5" CenterY="157.625" Width="151.0" Height="19.25" ZOrder="32768" FontWeight="Bold" FontSize="12" Valign="Middle" Color="14961e" />
+#     <Xref Database="WikiPathways" ID="WP534" />
+#   </DataNode>
 
 # ----- layout / board -----
 BOARD_MARGIN = 100.0    # margin around everything
