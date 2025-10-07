@@ -18,6 +18,12 @@ from collections import defaultdict
 #     <Xref Database="WikiPathways" ID="WP534" />
 #   </DataNode>
 
+# TODO: add elbows
+    # In "mim-conversion" add ConnectorType = "Elbow"
+    # Cambiar default_anchor_pos = 0.6
+
+# TODO: add organs > make like groups
+
 # ----- layout / board -----
 BOARD_MARGIN = 100.0    # margin around everything
 LAYER_GAP = 100.0       # vertical separation between BFS layers
