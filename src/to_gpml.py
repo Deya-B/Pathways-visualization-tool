@@ -24,6 +24,8 @@ from collections import defaultdict
 
 # TODO: add organs > make like groups
 
+# TODO: add pathway info (id del pathway) en csv
+
 # ----- layout / board -----
 BOARD_MARGIN = 100.0    # margin around everything
 LAYER_GAP = 100.0       # vertical separation between BFS layers
