@@ -26,6 +26,9 @@ from collections import defaultdict
 
 # TODO: add pathway info (id del pathway) en csv
 
+# TODO: add checkup that all metabolite names/labels are unique
+
+
 # ----- layout / board -----
 BOARD_MARGIN = 100.0    # margin around everything
 LAYER_GAP = 100.0       # vertical separation between BFS layers
