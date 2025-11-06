@@ -1,70 +1,85 @@
-# Fetch other databases (HMDB, ChEBI, Ensembl, UniProt) and the InChI_key through the LM_ID
-# by using LIPID MAPS® REST service (https://www.lipidmaps.org/resources/rest)
+# El siguiente código:
+    # 1. Lee el Excel con una columna ID.
+    # 2. Filtra solo los IDs válidos de LIPID MAPS (LM...).
+    # 3. Usa la API REST (/rest/compound/lm_id/{lm_id}/all) de LIPID MAPS® (https://www.lipidmaps.org/resources/rest)
+    #    para obtener HMDB, ChEBI, InChIKey, etc.
+    # 4. Rellena esas columnas (HMDB, ChEBI, Ensembl, UniProt, InChI) en el mismo Excel.
+    # 5. Ignora los IDs que no sean de LIPID MAPS, que empiezan por LM.
+####################################################################################################################
 
-# PARTS:
-# 1. invariant base URL
-base_URL = "https://www.lipidmaps.org/rest"
-
-# 2. INPUT 
-# This specification is composed of 3 required parameters separated by forward slashes.
-# The first parameter is the context, either "compound", "gene" or "protein", 
-# each of which has a separate list of input items associated with it (2nd parameter). 
-# The 3rd parameter is an appropriate input value for the chosen item.
-
-# 3. OUTPUT
-# Described in url
-
-
-
-
+import pandas as pd
 import requests
+from time import sleep
 
 def fetch_lipidmaps_info(lm_id):
-    url = f"https://www.lipidmaps.org/rest/lmwebservice.php?LM_ID={lm_id}"
-    r = requests.get(url)
-    r.raise_for_status()
-    data = r.json()
-    return data
+    """Consulta LIPID MAPS REST API para un LM_ID y devuelve los campos relevantes."""
+    url = f"https://www.lipidmaps.org/rest/compound/lm_id/{lm_id}/all"
+    try:
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        return {
+            "LM_ID": lm_id,
+            "Name": data.get("name"),
+            "HMDB": data.get("hmdb_id"),
+            "ChEBI": data.get("chebi_id"),
+            "KEGG": data.get("kegg_id"),
+            "PubChem": data.get("pubchem_cid"),
+            "InChI": data.get("inchi"),
+            "InChIKey": data.get("inchi_key")
+        }
+    except (requests.exceptions.RequestException, ValueError):
+        print(f"[ERROR] No data for {lm_id}")
+        return None
+    
 
-lm_id = "LMFA01010001"  # ejemplo: palmitic acid
-info = fetch_lipidmaps_info(lm_id)
+# 1. Leer Excel
+input_file = "c:/Users/dborrotoa/Desktop/TFM/PathwayBA_list.xlsx"
+output_file = "c:/Users/dborrotoa/Desktop/TFM/PathwayBA_crossrefs.xlsx"
 
-print(info.keys())
-# Este devuelve un JSON con todos los campos disponibles.
+xls = pd.ExcelFile(input_file)
+print(f"Sheets found: {xls.sheet_names}")
 
-
-
-# Para EXTRAER campos específicos
-def extract_crossrefs(data):
-    refs = data.get("EXTERNAL_REFERENCES", {})
-    return {
-        "HMDB": refs.get("HMDB_ID"),
-        "ChEBI": refs.get("CHEBI_ID"),
-        "Ensembl": refs.get("ENSEMBL_ID"),
-        "UniProt": refs.get("UNIPROT_ID"),
-        "InChIKey": data.get("INCHI_KEY")
-    }
-
-refs = extract_crossrefs(info)
-print(refs)
-
-
-# Integrar varios LM_IDs
-import pandas as pd
-
-lm_ids = ["LMFA01010001", "LMFA02000002", "LMFA03000003"]
-results = []
-
-for lm_id in lm_ids:
-    data = fetch_lipidmaps_info(lm_id)
-    refs = extract_crossrefs(data)
-    refs["LM_ID"] = lm_id
-    results.append(refs)
-
-df = pd.DataFrame(results)
-print(df)
+writer = pd.ExcelWriter(output_file, engine="openpyxl")
 
 
+# 2. Procesar cada hoja
+for sheet_name in xls.sheet_names:
+    print(f"\n--- Processing sheet: {sheet_name} ---")
+    df = pd.read_excel(xls, sheet_name)
 
-# Para guardar los resultados en CSV 
-df.to_csv("lipidmaps_crossrefs.csv", index=False)
+    # verificar que exista columna ID
+    if "ID" not in df.columns:
+        print(f"[WARN] No 'ID' column in {sheet_name}, skipped.")
+        df.to_excel(writer, sheet_name=sheet_name, index=False)
+        continue
+
+    # 3. Filtrar IDs válidos (LIPID MAPS)
+    lm_ids = [x for x in df["ID"].astype(str) if x.startswith("LM")]
+    print(f"Found {len(lm_ids)} LIPID MAPS IDs in {sheet_name}.")
+
+    results = []
+    for lm_id in lm_ids:
+        info = fetch_lipidmaps_info(lm_id)
+        if info:
+            results.append(info)
+        sleep(0.3)
+
+    if results:
+        crossrefs_df = pd.DataFrame(results)
+        merged = df.merge(crossrefs_df, how="left", left_on="ID", right_on="LM_ID")
+
+        # combinar columnas duplicadas si existieran
+        for col in ["HMDB", "ChEBI", "InChI"]:
+            if f"{col}_y" in merged.columns and f"{col}_x" in merged.columns:
+                merged[col] = merged[f"{col}_y"].combine_first(merged[f"{col}_x"])
+
+        merged = merged.drop(columns=[c for c in merged.columns if c.endswith(("_x", "_y")) or c == "LM_ID"])
+    else:
+        merged = df
+
+    # 4. Guardar hoja procesada en el Excel de salida
+    merged.to_excel(writer, sheet_name=sheet_name, index=False)
+
+writer.close()
+print(f"\nFinished. Results saved to: {output_file}")
