@@ -9,77 +9,123 @@
 
 import pandas as pd
 import requests
-from time import sleep
+import time
+from openpyxl import load_workbook
+
+TARGET_COLS = ["KEGG", "PubChem", "HMDB", "ChEBI", "Ensembl", "UniProt", "InChIKey", "InChI"]
 
 def fetch_lipidmaps_info(lm_id):
-    """Consulta LIPID MAPS REST API para un LM_ID y devuelve los campos relevantes."""
-    url = f"https://www.lipidmaps.org/rest/compound/lm_id/{lm_id}/all"
+    """Fetch cross-references and InChI info from LipidMaps REST API."""
+
+    proteins_ext = "protein/lmp_id"
+    metabolites_ext = "compound/lm_id"
+    if lm_id.startswith("LMP"):
+        ext = proteins_ext
+    else:
+        ext = metabolites_ext
+
+    url = f"https://www.lipidmaps.org/rest/{ext}/{lm_id}/all"
+
     try:
-        r = requests.get(url, timeout=10)
+        headers = {"User-Agent": "Mozilla/5.0"}
+        r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         data = r.json()
+
+        if isinstance(data, list) and not data:
+            return None
+
+        if not isinstance(data, dict):
+            print(f"[ERROR] Unexpected data format for {lm_id}: {type(data)}")
+            return None
+
         return {
             "LM_ID": lm_id,
-            "Name": data.get("name"),
-            "HMDB": data.get("hmdb_id"),
-            "ChEBI": data.get("chebi_id"),
             "KEGG": data.get("kegg_id"),
             "PubChem": data.get("pubchem_cid"),
-            "InChI": data.get("inchi"),
-            "InChIKey": data.get("inchi_key")
+            "HMDB": data.get("hmdb_id"),
+            "ChEBI": data.get("chebi_id"),
+            "RefSeq_Id": data.get("refseq_id"),
+            "UniProt": data.get("uniprot_id"),
+            "InChIKey": data.get("inchi_key"),
+            "InChI": data.get("inchi")
         }
-    except (requests.exceptions.RequestException, ValueError):
-        print(f"[ERROR] No data for {lm_id}")
+    except (requests.exceptions.RequestException, ValueError): 
+        print(f"[ERROR] No data for {lm_id}") 
         return None
-    
 
 # 1. Leer Excel
 input_file = "c:/Users/dborrotoa/Desktop/TFM/PathwayBA_list.xlsx"
-output_file = "c:/Users/dborrotoa/Desktop/TFM/PathwayBA_crossrefs.xlsx"
+wb = load_workbook(input_file)
+total_time = []
 
-xls = pd.ExcelFile(input_file)
-print(f"Sheets found: {xls.sheet_names}")
-
-writer = pd.ExcelWriter(output_file, engine="openpyxl")
-
-
-# 2. Procesar cada hoja
-for sheet_name in xls.sheet_names:
+for sheet_name in wb.sheetnames:
+    inicio = time.perf_counter()
+    ws = wb[sheet_name]
     print(f"\n--- Processing sheet: {sheet_name} ---")
-    df = pd.read_excel(xls, sheet_name)
 
-    # verificar que exista columna ID
+    # Cargar datos de la hoja con pandas para trabajar más cómodo
+    df = pd.DataFrame(ws.values)
+    df.columns = df.iloc[0]
+    df = df[1:]
+
     if "ID" not in df.columns:
         print(f"[WARN] No 'ID' column in {sheet_name}, skipped.")
-        df.to_excel(writer, sheet_name=sheet_name, index=False)
         continue
 
-    # 3. Filtrar IDs válidos (LIPID MAPS)
-    lm_ids = [x for x in df["ID"].astype(str) if x.startswith("LM")]
-    print(f"Found {len(lm_ids)} LIPID MAPS IDs in {sheet_name}.")
+# TODO: quitar nombre de la ruta para que no lo cuente
+    # ID's summary:
+    lm_ids = []
+    other_ids = []
+    empty = 0
+    for id in df["ID"].astype(str):
+        if id.startswith("LM"):
+            lm_ids.append(id)
+        elif not id.startswith("LM"):
+            other_ids.append(id)
+        else:
+            empty += 1
 
-    results = []
+    print(f"Found {len(lm_ids)} LIPID MAPS IDs in {sheet_name}.")
+    print(f"Found {len(other_ids)} IDs wich are not from LIPID MAPS in {sheet_name}.")
+    print(f"Found {empty} IDs wich are empty in {sheet_name}.")
+
+    # Consultar LipidMaps
+    results = {}
     for lm_id in lm_ids:
         info = fetch_lipidmaps_info(lm_id)
         if info:
-            results.append(info)
-        sleep(0.3)
+            results[lm_id] = info
+        time.sleep(0.3)
 
-    if results:
-        crossrefs_df = pd.DataFrame(results)
-        merged = df.merge(crossrefs_df, how="left", left_on="ID", right_on="LM_ID")
+    # Mapear columnas a índices en la hoja Excel
+    header = [cell.value for cell in ws[1]]
+    col_idx = {col: header.index(col) + 1 for col in TARGET_COLS if col in header}
+    id_idx = header.index("ID") + 1
 
-        # combinar columnas duplicadas si existieran
-        for col in ["HMDB", "ChEBI", "InChI"]:
-            if f"{col}_y" in merged.columns and f"{col}_x" in merged.columns:
-                merged[col] = merged[f"{col}_y"].combine_first(merged[f"{col}_x"])
+    # Actualizar celdas directamente
+    for row in ws.iter_rows(min_row=2, values_only=False):
+        lm_id = str(row[id_idx - 1].value)
+        if lm_id in results:
+            for col_name, value in results[lm_id].items():
+                if col_name in col_idx and value is not None:
+                    ws.cell(row=row[0].row, column=col_idx[col_name], value=value)
 
-        merged = merged.drop(columns=[c for c in merged.columns if c.endswith(("_x", "_y")) or c == "LM_ID"])
-    else:
-        merged = df
+    fin = time.perf_counter()
+    total_time.append(fin - inicio)
+    print(f"Tiempo de ejecución: {fin - inicio:.2f} s")
 
-    # 4. Guardar hoja procesada en el Excel de salida
-    merged.to_excel(writer, sheet_name=sheet_name, index=False)
+# Guardar cambios
+output_file = input_file.replace(".xlsx", "_updated.xlsx")
+wb.save(output_file)
+print(f"Archivo guardado como: {output_file}")
+print(f"Tiempo total: {sum(total_time):.2f} s")
 
-writer.close()
-print(f"\nFinished. Results saved to: {output_file}")
+
+
+
+
+# import requests, json
+
+# url = "https://www.lipidmaps.org/rest/protein/lmp_id/LMP006646/all"
+# print(json.dumps(requests.get(url).json(), indent=2))
