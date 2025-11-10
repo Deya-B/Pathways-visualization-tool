@@ -24,44 +24,43 @@ TARGET_COLS = ["KEGG", "PubChem", "HMDB", "ChEBI", "RefSeq_Id", "UniProt", "InCh
 uniprot_pattern = r"([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})"
     # https://www.uniprot.org/help/accession_numbers
 
-def fetch_lipidmaps_info(lm_id):
+def fetch_lipidmaps_info(query_id):
     """Fetch cross-references and InChI info from LipidMaps REST API."""
-    if not lm_id:
+    if not query_id:
         return None
 
     # Filtrar IDs
-    if lm_id.startswith("LMP"):
+    if query_id.startswith("LMP"):
         ext = "protein/lmp_id"
-    elif re.match(uniprot_pattern, lm_id):
+    elif re.match(uniprot_pattern, query_id):
         ext = "protein/uniprot_id"
     else:
         ext = "compound/lm_id"
-    url = f"https://www.lipidmaps.org/rest/{ext}/{lm_id}/all"
+    url = f"https://www.lipidmaps.org/rest/{ext}/{query_id}/all"
 
     # Consultar la base de datos
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        r = requests.get(url, headers=headers, timeout=10)
+        r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         r.raise_for_status()
         data = r.json()
-
         if isinstance(data, list) and not data:
             return None
 
         # PROTEIN: múltiples filas, usar solo Row1
-        if lm_id.startswith("LMP") and isinstance(data, dict) and any(k.startswith('Row') for k in data):
-            first_row = data.get('Row1')
-            if not first_row:
-                return None
+        if isinstance(data, dict) and any(k.startswith('Row') for k in data):
+            first_row = data.get('Row1') or {}
             return {
-                "LM_ID": lm_id,
+                "LM_ID": first_row.get("lm_id") or first_row.get("lmp_id") or query_id,
                 "RefSeq_Id": first_row.get("refseq_id"),
                 "UniProt": first_row.get("uniprot_id")
             }    
         # METABOLITE y PROTEIN: dict plano
         elif isinstance(data, dict):
+            # extraer LM id
+            lm_from_data = data.get("lm_id") or data.get("lmp_id") or None
             return {
-                "LM_ID": lm_id,
+                "LM_ID": lm_from_data if lm_from_data 
+                            else (query_id if query_id.startswith("LM") else None),
                 "KEGG": data.get("kegg_id"),
                 "PubChem": data.get("pubchem_cid"),
                 "HMDB": data.get("hmdb_id"),
@@ -95,42 +94,57 @@ for sheet_name in wb.sheetnames:
     df.columns = df.iloc[0]     # Primera fila = header
     df = df[2:]                 # Saltamos header y nombre del pathway
 
-    if "ID" not in df.columns:
-        print(f"[WARN] No 'ID' column in {sheet_name}, skipped.")
-        continue
-
     # Filtrado y conteo de IDs 
-    lm_ids, other_ids, empty = [], [], 0
+    seen_queries = set()
+    not_seen = set()
+    lm_ids, other_ids = [], []
     for id_raw in df["ID"]:
         id_str = str(id_raw).strip() if pd.notna(id_raw) else '' # si el ID dado no es nulo
         if not id_str:
-            empty += 1
-        elif id_str.startswith("LM"):
-            lm_ids.append(id_str)
-        else:
-            other_ids.append(id_str)
-            
-    print(f"Found {len(lm_ids)} LIPID MAPS IDs in {sheet_name}.")
-    # print(f"Found {len(other_ids)} IDs wich are not from LIPID MAPS in {sheet_name}:{other_ids}")
-    # print(f"Found {empty} IDs wich are empty in {sheet_name}.")
+            continue
+        for sub in [s.strip() for s in id_str.split(";") if s.strip()]:
+            if sub in seen_queries:
+                continue
+            seen_queries.add(sub)
+            if sub.startswith("LM"):
+                lm_ids.append(sub)
+            else:
+                other_ids.append(sub)
+        for id_raw not in seen_queries:
+            pass
 
-    # Consultar LipidMaps
+    print(f"Found {len(lm_ids)} LIPID MAPS IDs in {sheet_name}.")
+    print(f"Found {len(other_ids)} IDs wich are not from LIPID MAPS in {sheet_name}:{other_ids}")
+    print(f"Found {len(seen_queries)} sub-IDs encontrados in {sheet_name}:{seen_queries}.")
+
+    # Consultar LipidMaps  y crear index de búsqueda
     results = {}
     for query_id in (lm_ids + other_ids):
-        if query_id in results:
-            continue
         info = fetch_lipidmaps_info(query_id)
-        if info:
-            # Guardar mapeo por LM_ID si existe
-            if info.get("LM_ID"):
-                results[info["LM_ID"]] = info
-            # Guardar mapeo por UniProt si existe
-            if info.get("UniProt"):
-                results[info["UniProt"]] = info       
+        if not info:
+            time.sleep(0.25)
+            continue
+
+        # LM ID
+        lm_key = info.get("LM_ID")
+        if lm_key:
+            results[lm_key] = info
+
+        # UniProt ID
+        uni_field = info.get("UniProt")
+        if uni_field:
+            for uni in [u.strip() for u in str(uni_field).split(";") if u.strip()]:
+                results[uni] = info
+        
+        # Indexar por la consulta original (por si no hay LM o UniProt)
+        results[query_id] = info
         time.sleep(0.25)
 
     # Mapear columnas a índices en la hoja Excel
     header = [cell.value for cell in ws[1]]
+    if "ID" not in header:
+        print(f"[WARN] No 'ID' header in sheet {sheet_name}, skip.")
+        continue
     id_idx = header.index("ID") + 1
     target_col_idx = {col: header.index(col) + 1 for col in TARGET_COLS if col in header}
 
@@ -141,34 +155,51 @@ for sheet_name in wb.sheetnames:
         if not id_val:
             continue
 
-        info = results.get(id_val)
-        if not info and re.match(uniprot_pattern, id_val):
-            info = results.get(id_val)
-        
-        if info:
-            # Reemplazar UniProt → LM_ID si aplica
-            if re.match(uniprot_pattern, id_val) and info.get("LM_ID"):
-                id_cell.value = info["LM_ID"]
-            # Rellenar columnas
-            for col_name, col_idx in target_col_idx.items():
-                val = info.get(col_name)
-                if val:
-                    ws.cell(row=id_cell.row, column=col_idx, value=val)
+        sub_ids = [x.strip() for x in id_val.split(";") if x.strip()]
+        merged_info = {k: [] for k in TARGET_COLS}
+        new_id_val = []
 
-    unmapped_ids = [x for x in other_ids if x not in results]
-    print(f"IDs not mapped in {sheet_name}: {unmapped_ids}")
+        for sub_id in sub_ids:
+            info = results.get(sub_id)
+            if not info and re.match(uniprot_pattern, sub_id):
+                info = results.get(sub_id)
+            if info:
+                # reemplazar UniProt por LM si existe LM_ID real
+                lm_real = info.get("LM_ID")
+                if lm_real:
+                    new_id_val.append(lm_real)
+                else:
+                    new_id_val.append(sub_id)
+
+                # para cada campo target, añadir valores evitando duplicados
+                for col in TARGET_COLS:
+                    v = info.get(col)
+                    if v:
+                        # si la API devuelve varios dentro del mismo campo, separar por ';'
+                        for part in [p.strip() for p in str(v).split(";") if p.strip()]:
+                            if part not in merged_info[col]:
+                                merged_info[col].append(part)
+            else:
+                # si no hay info, conservar el sub-id sin cambios
+                new_id_val.append(sub_id)
+
+        # escribir nuevo ID concatenado (mantener orden encontrado)
+        id_cell.value = ";".join(new_id_val)
+
+        # escribir columnas objetivo concatenadas
+        for col_name, col_idx in target_col_idx.items():
+            vals = merged_info.get(col_name) or []
+            if vals:
+                ws.cell(row=id_cell.row, column=col_idx, value=";".join(vals))
 
     fin = time.perf_counter()
     total_time.append(fin - inicio)
     print(f"Tiempo de ejecución: {fin - inicio:.2f} s")
 
-# Guardar cambios
 output_file = input_file.replace(".xlsx", "_updated.xlsx")
 wb.save(output_file)
 print(f"Archivo guardado como: {output_file}")
 print(f"Tiempo total: {sum(total_time):.2f} s")
-
-
 
 
 #######################################################################################
