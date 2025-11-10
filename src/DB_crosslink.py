@@ -19,11 +19,7 @@ def fetch_lipidmaps_info(lm_id):
 
     proteins_ext = "protein/lmp_id"
     metabolites_ext = "compound/lm_id"
-    if lm_id.startswith("LMP"):
-        ext = proteins_ext
-    else:
-        ext = metabolites_ext
-
+    ext = proteins_ext if lm_id.startswith("LMP") else metabolites_ext
     url = f"https://www.lipidmaps.org/rest/{ext}/{lm_id}/all"
 
     try:
@@ -35,21 +31,33 @@ def fetch_lipidmaps_info(lm_id):
         if isinstance(data, list) and not data:
             return None
 
-        if not isinstance(data, dict):
+        # PROTEIN: múltiples filas, usar solo Row1
+        if lm_id.startswith("LMP") and isinstance(data, dict) and any(k.startswith('Row') for k in data):
+            first_row = data.get('Row1')
+            if not first_row:
+                return None
+            return {
+                "LM_ID": lm_id,
+                "RefSeq_Id": first_row.get("refseq_id"),
+                "UniProt": first_row.get("uniprot_id")
+            }    
+        # METABOLITE y PROTEIN: dict plano
+        elif isinstance(data, dict):
+            return {
+                "LM_ID": lm_id,
+                "KEGG": data.get("kegg_id"),
+                "PubChem": data.get("pubchem_cid"),
+                "HMDB": data.get("hmdb_id"),
+                "ChEBI": data.get("chebi_id"),
+                "RefSeq_Id": data.get("refseq_id"),
+                "UniProt": data.get("uniprot_id"),
+                "InChIKey": data.get("inchi_key"),
+                "InChI": data.get("inchi")
+            }
+        else:
             print(f"[ERROR] Unexpected data format for {lm_id}: {type(data)}")
             return None
 
-        return {
-            "LM_ID": lm_id,
-            "KEGG": data.get("kegg_id"),
-            "PubChem": data.get("pubchem_cid"),
-            "HMDB": data.get("hmdb_id"),
-            "ChEBI": data.get("chebi_id"),
-            "RefSeq_Id": data.get("refseq_id"),
-            "UniProt": data.get("uniprot_id"),
-            "InChIKey": data.get("inchi_key"),
-            "InChI": data.get("inchi")
-        }
     except (requests.exceptions.RequestException, ValueError): 
         print(f"[ERROR] No data for {lm_id}") 
         return None
@@ -88,8 +96,8 @@ for sheet_name in wb.sheetnames:
             other_ids.append(id_str)
             
     print(f"Found {len(lm_ids)} LIPID MAPS IDs in {sheet_name}.")
-    print(f"Found {len(other_ids)} IDs wich are not from LIPID MAPS in {sheet_name}.")
-    print(f"Found {empty} IDs wich are empty in {sheet_name}.")
+    print(f"Found {len(other_ids)} IDs wich are not from LIPID MAPS in {sheet_name}:{other_ids}")
+    # print(f"Found {empty} IDs wich are empty in {sheet_name}.")
 
     # Consultar LipidMaps
     results = {}
@@ -128,5 +136,5 @@ print(f"Tiempo total: {sum(total_time):.2f} s")
 
 # import requests, json
 
-# url = "https://www.lipidmaps.org/rest/protein/lmp_id/LMP002143/all"
+# url = "https://www.lipidmaps.org/rest/protein/lmp_id/LMP001605/all"
 # print(json.dumps(requests.get(url).json(), indent=2))
