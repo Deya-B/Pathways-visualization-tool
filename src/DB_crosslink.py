@@ -92,8 +92,8 @@ for sheet_name in wb.sheetnames:
 
     # Cargar datos de la hoja con pandas para trabajar más cómodo
     df = pd.DataFrame(ws.values)
-    df.columns = df.iloc[0] # Primera fila = header
-    df = df[2:] # Saltamos header y nombre del pathway
+    df.columns = df.iloc[0]     # Primera fila = header
+    df = df[2:]                 # Saltamos header y nombre del pathway
 
     if "ID" not in df.columns:
         print(f"[WARN] No 'ID' column in {sheet_name}, skipped.")
