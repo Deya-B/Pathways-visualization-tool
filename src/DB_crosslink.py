@@ -96,7 +96,6 @@ for sheet_name in wb.sheetnames:
 
     # Filtrado y conteo de IDs 
     seen_queries = set()
-    not_seen = set()
     lm_ids, other_ids = [], []
     for id_raw in df["ID"]:
         id_str = str(id_raw).strip() if pd.notna(id_raw) else '' # si el ID dado no es nulo
@@ -110,12 +109,10 @@ for sheet_name in wb.sheetnames:
                 lm_ids.append(sub)
             else:
                 other_ids.append(sub)
-        for id_raw not in seen_queries:
-            pass
+
 
     print(f"Found {len(lm_ids)} LIPID MAPS IDs in {sheet_name}.")
     print(f"Found {len(other_ids)} IDs wich are not from LIPID MAPS in {sheet_name}:{other_ids}")
-    print(f"Found {len(seen_queries)} sub-IDs encontrados in {sheet_name}:{seen_queries}.")
 
     # Consultar LipidMaps  y crear index de búsqueda
     results = {}
@@ -139,6 +136,21 @@ for sheet_name in wb.sheetnames:
         # Indexar por la consulta original (por si no hay LM o UniProt)
         results[query_id] = info
         time.sleep(0.25)
+
+    # Cálculo de IDs no crossreferenciados
+    not_crossreferenced = set()
+    for id_raw in df["ID"]:
+        id_str = str(id_raw).strip() if pd.notna(id_raw) else ''
+        if not id_str:
+            continue
+        for sub in [s.strip() for s in id_str.split(";") if s.strip()]:
+            if sub not in results:
+                not_crossreferenced.add(sub)
+    
+    if not_crossreferenced:
+        print(f"Found {len(not_crossreferenced)} IDs not crossreferenced in {sheet_name}: {sorted(not_crossreferenced)}")
+    else:
+        print(f"Todas las IDs cruzadas en {sheet_name}.")
 
     # Mapear columnas a índices en la hoja Excel
     header = [cell.value for cell in ws[1]]
@@ -196,7 +208,7 @@ for sheet_name in wb.sheetnames:
     total_time.append(fin - inicio)
     print(f"Tiempo de ejecución: {fin - inicio:.2f} s")
 
-output_file = input_file.replace(".xlsx", "_updated.xlsx")
+output_file = input_file.replace(".xlsx", "_updated2.xlsx")
 wb.save(output_file)
 print(f"Archivo guardado como: {output_file}")
 print(f"Tiempo total: {sum(total_time):.2f} s")
