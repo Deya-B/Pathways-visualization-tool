@@ -3,7 +3,7 @@
     # 2. Filtra solo los IDs válidos de LIPID MAPS (LM...).
     # 3. Usa la API REST (/rest/compound/lm_id/{lm_id}/all) de LIPID MAPS® (https://www.lipidmaps.org/resources/rest)
     #    para obtener HMDB, ChEBI, InChIKey, etc.
-    # 4. Rellena esas columnas (HMDB, ChEBI, Ensembl, UniProt, InChI) en el mismo Excel.
+    # 4. Rellena esas columnas (PubChem, KEGG, HMDB, ChEBI, UniProt, InChI, InChIKey) en el mismo Excel.
     # 5. Ignora los IDs que no sean de LIPID MAPS, que empiezan por LM.
 ####################################################################################################################
 
@@ -12,7 +12,7 @@ import requests
 import time
 from openpyxl import load_workbook
 
-TARGET_COLS = ["KEGG", "PubChem", "HMDB", "ChEBI", "Ensembl", "UniProt", "InChIKey", "InChI"]
+TARGET_COLS = ["KEGG", "PubChem", "HMDB", "ChEBI", "RefSeq_Id", "UniProt", "InChIKey", "InChI"]
 
 def fetch_lipidmaps_info(lm_id):
     """Fetch cross-references and InChI info from LipidMaps REST API."""
@@ -55,7 +55,8 @@ def fetch_lipidmaps_info(lm_id):
         return None
 
 # 1. Leer Excel
-input_file = "c:/Users/dborrotoa/Desktop/TFM/PathwayBA_list.xlsx"
+# input_file = "c:/Users/dborrotoa/Desktop/TFM/PathwayBA_list.xlsx"
+input_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/PathwayBA_list.xlsx"
 wb = load_workbook(input_file)
 total_time = []
 
@@ -66,26 +67,26 @@ for sheet_name in wb.sheetnames:
 
     # Cargar datos de la hoja con pandas para trabajar más cómodo
     df = pd.DataFrame(ws.values)
-    df.columns = df.iloc[0]
-    df = df[1:]
+    df.columns = df.iloc[0] # Primera fila = header
+    df = df[2:] # Saltamos header y nombre del pathway
 
     if "ID" not in df.columns:
         print(f"[WARN] No 'ID' column in {sheet_name}, skipped.")
         continue
 
-# TODO: quitar nombre de la ruta para que no lo cuente
-    # ID's summary:
+    # Filtrado y conteo de IDs 
     lm_ids = []
     other_ids = []
     empty = 0
-    for id in df["ID"].astype(str):
-        if id.startswith("LM"):
-            lm_ids.append(id)
-        elif not id.startswith("LM"):
-            other_ids.append(id)
-        else:
+    for id_raw in df["ID"]:
+        id_str = str(id_raw).strip() if pd.notna(id_raw) else '' # si el ID dado no es nulo
+        if not id_str:
             empty += 1
-
+        elif id_str.startswith("LM"):
+            lm_ids.append(id_str)
+        else:
+            other_ids.append(id_str)
+            
     print(f"Found {len(lm_ids)} LIPID MAPS IDs in {sheet_name}.")
     print(f"Found {len(other_ids)} IDs wich are not from LIPID MAPS in {sheet_name}.")
     print(f"Found {empty} IDs wich are empty in {sheet_name}.")
@@ -127,5 +128,5 @@ print(f"Tiempo total: {sum(total_time):.2f} s")
 
 # import requests, json
 
-# url = "https://www.lipidmaps.org/rest/protein/lmp_id/LMP006646/all"
+# url = "https://www.lipidmaps.org/rest/protein/lmp_id/LMP002143/all"
 # print(json.dumps(requests.get(url).json(), indent=2))
