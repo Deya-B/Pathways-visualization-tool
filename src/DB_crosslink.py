@@ -148,7 +148,7 @@ for sheet_name in wb.sheetnames:
                 not_crossreferenced.add(sub)
     
     if not_crossreferenced:
-        print(f"Found {len(not_crossreferenced)} IDs not crossreferenced in {sheet_name}: {sorted(not_crossreferenced)}")
+        print(f"--- [{len(not_crossreferenced)}] IDs finished with no crossreference in {sheet_name}: {sorted(not_crossreferenced)}")
     else:
         print(f"Todas las IDs cruzadas en {sheet_name}.")
 
