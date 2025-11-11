@@ -9,7 +9,6 @@
     #    InChIKey, etc.
     # 4. Rellena esas columnas (PubChem, KEGG, HMDB, ChEBI, UniProt, InChI, InChIKey) 
     #    en el mismo Excel.
-    # 5. Ignora los IDs que no sean de LIPID MAPS, que empiezan por LM.
 #######################################################################################
 
 import pandas as pd
@@ -152,6 +151,28 @@ for sheet_name in wb.sheetnames:
     else:
         print(f"Todas las IDs cruzadas en {sheet_name}.")
 
+
+###### NEW
+    # Intentar recuperar información de PubChem y ChEBI
+    external_results = {}
+    for unknown_id in sorted(not_crossreferenced):
+        if unknown_id.startswith("CHEBI:"):
+            info = fetch_chebi_info(unknown_id)
+        elif re.match(r"^\d+$", unknown_id):  # numérico → PubChem CID
+            info = fetch_pubchem_info(unknown_id)
+        else:
+            continue
+
+        if info:
+            external_results[unknown_id] = info
+        time.sleep(0.3)
+
+    # Unir resultados externos al diccionario principal
+    results.update(external_results)
+###### NEW
+
+
+
     # Mapear columnas a índices en la hoja Excel
     header = [cell.value for cell in ws[1]]
     if "ID" not in header:
@@ -215,29 +236,88 @@ print(f"Tiempo total: {sum(total_time):.2f} s")
 
 
 #######################################################################################
-#                                UniProt REST API                                     
+#                           CheBI + PubChem REST API                                     
 #######################################################################################
 # El siguiente código:
-    # 1. Lee el Excel con una columna ID.
-    # 2. Filtra solo los IDs válidos.
-    # 3. Usa la API REST de UniProt (https://www.uniprot.org/help/api_queries) 
-    #    para obtener HMDB, ChEBI, 
-    #    InChIKey, etc.
-    # 4. Rellena esas columnas (PubChem, KEGG, HMDB, ChEBI, UniProt, InChI, InChIKey) 
-    #    en el mismo Excel.
-    # 5. Ignora los IDs que no sean de LIPID MAPS, que empiezan por LM.
+    # 1. Con los IDs no crossreferenciados que pertenezcan a CheBi o PubChem del
+    #    not_crossreferenced = set()
+    # 2. Usa las API REST (https://pubchem.ncbi.nlm.nih.gov/docs/rdf-rest) 
+    #   (https://jcheminf.biomedcentral.com/articles/10.1186/s13321-016-0123-9)
+    #    para obtener los datos
+    # 4. Rellena las columnas (PubChem, KEGG, HMDB, ChEBI, UniProt, InChI, InChIKey) 
+    #    del Excel
+
+# --- Processing sheet: Sheet1 ---
+# Todas las IDs cruzadas en Sheet1.
+
+# --- Processing sheet: Sheet2 ---
+# IDs not crossreferenced in Sheet2: 
+# ['155920193', '42776911', 'A7AZH2', 'A7B3K3', 'A7B4V1', 
+# 'CHEBI:133678', 'CHEBI:172393', 'P0AET8', 'P21215']
+
+# --- Processing sheet: Sheet3 ---
+# IDs not crossreferenced in Sheet3: 
+# ['71448933', '91828270', 'A7AZH2', 'A7B3K3', 'A7B4V1', 'C8WGQ3', 
+# 'C8WMP0', 'P0AET8', 'Q5LA59']
+
+# --- Processing sheet: Sheet4 ---
+# IDs not crossreferenced in Sheet4: 
+# ['137333454', 'A7B4V1', 'P0AET8', 'P52843', 'Q4LDG0', 'Q91W64']
+
+# --- Processing sheet: Sheet5 ---
+# IDs not crossreferenced in Sheet5: 
+# ['11966205', '134364', '644071', 'A7AZH2', 'A7B3K3', 'B0NAQ4', 'C8WGQ3', 
+# 'C8WMP0', 'P07914', 'P19337', 'P19409', 'P19410', 'P19412', 'P19413', 'P32370']
+
+# https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/644071/property/InChI,InChIKey,Title/JSON
+# https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/644071/xrefs/RegistryID/JSON
 
 
+###### NEW
+def fetch_chebi_info(chebi_id):
+    """Fetch compound info from ChEBI REST API."""
+    try:
+        chebi_id = chebi_id.replace(" ", "")
+        if not chebi_id.startswith("CHEBI:"):
+            return None
+        url = f"https://www.ebi.ac.uk/chebi/ws/rest/{chebi_id}?format=json"
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json()
+        res = {
+            "ChEBI": chebi_id,
+            "KEGG": None,
+            "PubChem": None,
+            "HMDB": None,
+            "InChI": data.get("inchi"),
+            "InChIKey": data.get("inchiKey")
+        }
+        return res
+    except Exception as e:
+        print(f"[WARN] ChEBI no data for {chebi_id}: {e}")
+        return None
 
-# from UniProtMapper import ProtMapper
 
-# mapper = ProtMapper()
-
-# fields = ["xref_ensembl"]
-# result, failed = mapper.get(
-#     ids=["Q9NYL5","Q9H2F3","Q9Y6A2"], 
-#     fields=fields,
-#     )
-# print(result)
-
-
+def fetch_pubchem_info(pubchem_id):
+    """Fetch compound info from PubChem REST API (using CID)."""
+    try:
+        cid = re.sub(r"[^0-9]", "", pubchem_id)  # mantener solo dígitos
+        if not cid:
+            return None
+        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/InChI,InChIKey,Title/JSON"
+        r = requests.get(url, timeout=10)
+        r.raise_for_status()
+        data = r.json().get("PropertyTable", {}).get("Properties", [{}])[0]
+        res = {
+            "PubChem": cid,
+            "KEGG": None,
+            "HMDB": None,
+            "ChEBI": None,
+            "InChI": data.get("InChI"),
+            "InChIKey": data.get("InChIKey")
+        }
+        return res
+    except Exception as e:
+        print(f"[WARN] PubChem no data for {pubchem_id}: {e}")
+        return None
+###### NEW
