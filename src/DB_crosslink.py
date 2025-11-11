@@ -1,3 +1,4 @@
+
 #######################################################################################
 #                               LIPID MAPS REST API                                   # 
 #######################################################################################
@@ -16,6 +17,67 @@ import requests
 import time
 from openpyxl import load_workbook
 import re
+
+###### NEW
+# def fetch_chebi_info(chebi_id):
+#     """Fetch compound info from ChEBI REST API."""
+#     try:
+#         chebi_id = chebi_id.replace(" ", "")
+#         if not chebi_id.startswith("CHEBI:"):
+#             return None
+#         url = f"https://www.ebi.ac.uk/chebi/ws/rest/{chebi_id}?format=json"
+#         r = requests.get(url, timeout=10)
+#         r.raise_for_status()
+#         data = r.json()
+#         res = {
+#             "ChEBI": chebi_id,
+#             "KEGG": None,
+#             "PubChem": None,
+#             "HMDB": None,
+#             "InChI": data.get("inchi"),
+#             "InChIKey": data.get("inchiKey")
+#         }
+#         return res
+#     except Exception as e:
+#         print(f"[WARN] ChEBI no data for {chebi_id}: {e}")
+#         return None
+
+
+def fetch_pubchem_info(pubchem_id):
+    """Fetch compound info from PubChem REST API (using CID)."""
+    try:
+        cid = re.sub(r"[^0-9]", "", pubchem_id)  # mantener solo dígitos
+        if not cid:
+            return None
+        # Extraer InChI e InChIKey
+        url_inchi = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/InChI,InChIKey/JSON"
+        r_inchi = requests.get(url_inchi, timeout=10)
+        r_inchi.raise_for_status()
+        data_inchi = r_inchi.json().get("PropertyTable", {}).get("Properties", [{}])[0]
+        # Extraer crossreferences (xrefs)
+        url_xrefs = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/xrefs/RegistryID/JSON"
+        r_xrefs = requests.get(url_xrefs, timeout=10)
+        r_xrefs.raise_for_status()
+        data_xrefs = r_xrefs.json().get("PropertyTable", {}).get("Properties", [{}])[0]
+
+# https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/24883435/xrefs/RegistryID,SourceName/JSON
+        keg_id = None # hacer una regexp para C+numeros (C12345)
+        chebi = None # startswith("CHEBI:")
+        hmdb = None # startswith("HMDB")
+        res = {
+            "PubChem": cid,
+            "KEGG": data_xrefs.get("RegistryID"[keg_id]),
+            "HMDB": data_xrefs.get("RegistryID"[hmdb]),
+            "ChEBI": data_xrefs.get("RegistryID"[chebi]),
+            "InChI": data_inchi.get("InChI"),
+            "InChIKey": data_inchi.get("InChIKey")
+        }
+        return res
+    except Exception as e:
+        print(f"[WARN] PubChem no data for {pubchem_id}: {e}")
+        return None
+###### NEW
+
 
 TARGET_COLS = ["KEGG", "PubChem", "HMDB", "ChEBI", "RefSeq_Id", "UniProt", "InChIKey", "InChI"]
 
@@ -70,16 +132,16 @@ def fetch_lipidmaps_info(query_id):
                 "InChI": data.get("inchi")
             }
         else:
-            print(f"[ERROR] Unexpected data format for {lm_id}: {type(data)}")
+            print(f"[ERROR] Unexpected data format for {query_id}: {type(data)}")
             return None
 
     except (requests.exceptions.RequestException, ValueError) as e: 
-        print(f"[ERROR] No data for {lm_id} ({e})") 
+        print(f"[ERROR] No data for {query_id} ({e})") 
         return None
 
 # Leer Excel
-# input_file = "c:/Users/dborrotoa/Desktop/TFM/PathwayBA_list.xlsx"
-input_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/PathwayBA_list.xlsx"
+input_file = "c:/Users/dborrotoa/Desktop/TFM/PathwayBA_list.xlsx"
+# input_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/PathwayBA_list.xlsx"
 wb = load_workbook(input_file)
 total_time = []
 
@@ -153,12 +215,10 @@ for sheet_name in wb.sheetnames:
 
 
 ###### NEW
-    # Intentar recuperar información de PubChem y ChEBI
+    # Intentar recuperar información de PubChem
     external_results = {}
     for unknown_id in sorted(not_crossreferenced):
-        if unknown_id.startswith("CHEBI:"):
-            info = fetch_chebi_info(unknown_id)
-        elif re.match(r"^\d+$", unknown_id):  # numérico → PubChem CID
+        if re.match(r"^\d+$", unknown_id):  # numérico → PubChem CID
             info = fetch_pubchem_info(unknown_id)
         else:
             continue
@@ -229,7 +289,7 @@ for sheet_name in wb.sheetnames:
     total_time.append(fin - inicio)
     print(f"Tiempo de ejecución: {fin - inicio:.2f} s")
 
-output_file = input_file.replace(".xlsx", "_updated2.xlsx")
+output_file = input_file.replace(".xlsx", "_updated.xlsx")
 wb.save(output_file)
 print(f"Archivo guardado como: {output_file}")
 print(f"Tiempo total: {sum(total_time):.2f} s")
@@ -272,52 +332,3 @@ print(f"Tiempo total: {sum(total_time):.2f} s")
 # https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/644071/property/InChI,InChIKey,Title/JSON
 # https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/644071/xrefs/RegistryID/JSON
 
-
-###### NEW
-def fetch_chebi_info(chebi_id):
-    """Fetch compound info from ChEBI REST API."""
-    try:
-        chebi_id = chebi_id.replace(" ", "")
-        if not chebi_id.startswith("CHEBI:"):
-            return None
-        url = f"https://www.ebi.ac.uk/chebi/ws/rest/{chebi_id}?format=json"
-        r = requests.get(url, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        res = {
-            "ChEBI": chebi_id,
-            "KEGG": None,
-            "PubChem": None,
-            "HMDB": None,
-            "InChI": data.get("inchi"),
-            "InChIKey": data.get("inchiKey")
-        }
-        return res
-    except Exception as e:
-        print(f"[WARN] ChEBI no data for {chebi_id}: {e}")
-        return None
-
-
-def fetch_pubchem_info(pubchem_id):
-    """Fetch compound info from PubChem REST API (using CID)."""
-    try:
-        cid = re.sub(r"[^0-9]", "", pubchem_id)  # mantener solo dígitos
-        if not cid:
-            return None
-        url = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/InChI,InChIKey,Title/JSON"
-        r = requests.get(url, timeout=10)
-        r.raise_for_status()
-        data = r.json().get("PropertyTable", {}).get("Properties", [{}])[0]
-        res = {
-            "PubChem": cid,
-            "KEGG": None,
-            "HMDB": None,
-            "ChEBI": None,
-            "InChI": data.get("InChI"),
-            "InChIKey": data.get("InChIKey")
-        }
-        return res
-    except Exception as e:
-        print(f"[WARN] PubChem no data for {pubchem_id}: {e}")
-        return None
-###### NEW
