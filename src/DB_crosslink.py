@@ -78,7 +78,7 @@ def fetch_pubchem_info(pubchem_id):
         return None
 ###### NEW
 
-
+# TODO: Allow for capital/lowercase letters in column names
 TARGET_COLS = ["KEGG", "PubChem", "HMDB", "ChEBI", "RefSeq_Id", "UniProt", "InChIKey", "InChI"]
 
 # Definir UniProt regex
