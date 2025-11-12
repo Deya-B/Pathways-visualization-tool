@@ -1,15 +1,19 @@
 
 #######################################################################################
-#                               LIPID MAPS REST API                                   # 
+#                 LIPID MAPS REST API + PubChem REST API                              # 
 #######################################################################################
 # El siguiente código:
-    # 1. Lee el Excel con una columna ID.
-    # 2. Filtra los IDs.
-    # 3. Usa la API REST (/rest/compound/lm_id/{lm_id}/all) de LIPID MAPS® 
-    #    (https://www.lipidmaps.org/resources/rest) para obtener HMDB, ChEBI, 
-    #    InChIKey, etc.
-    # 4. Rellena esas columnas (PubChem, KEGG, HMDB, ChEBI, UniProt, InChI, InChIKey) 
-    #    en el mismo Excel.
+    # 1. Lee el Excel con los ID's de LIPID MAPS y PubChem.
+    # 2. Filtra los IDs: de LIPID MAPS para metabolitos o proteínas, y los de PubChem. 
+    # 3. 
+    #  a) Usa la API REST de LIPID MAPS® (/rest/compound/lm_id/{lm_id}/all)  
+    #       (https://www.lipidmaps.org/resources/rest) para obtener la InChI e InChIKey de
+    #       cada metabolito y las cross-refs de los IDs con KEGG, PubChem, HMDB y ChEBI
+    #       (metabolitos) y RefSeq_ID y UniProt en el caso de proteínas.
+    #  b) Usa las API REST de PubChem (https://pubchem.ncbi.nlm.nih.gov/docs/rdf-rest) 
+    #       para obtener, tanto los datos de la InChI e InChIKey de cada metabolito, 
+    #       como las cross-refs de los IDs con KEGG, HMDB y ChEBI
+    # 4. Genera una copia del Excel actualizado "_updated.xlsx".
 #######################################################################################
 
 import pandas as pd
@@ -18,57 +22,42 @@ import time
 from openpyxl import load_workbook
 import re
 
-###### NEW
-# def fetch_chebi_info(chebi_id):
-#     """Fetch compound info from ChEBI REST API."""
-#     try:
-#         chebi_id = chebi_id.replace(" ", "")
-#         if not chebi_id.startswith("CHEBI:"):
-#             return None
-#         url = f"https://www.ebi.ac.uk/chebi/ws/rest/{chebi_id}?format=json"
-#         r = requests.get(url, timeout=10)
-#         r.raise_for_status()
-#         data = r.json()
-#         res = {
-#             "ChEBI": chebi_id,
-#             "KEGG": None,
-#             "PubChem": None,
-#             "HMDB": None,
-#             "InChI": data.get("inchi"),
-#             "InChIKey": data.get("inchiKey")
-#         }
-#         return res
-#     except Exception as e:
-#         print(f"[WARN] ChEBI no data for {chebi_id}: {e}")
-#         return None
-
-
 def fetch_pubchem_info(pubchem_id):
     """Fetch compound info from PubChem REST API (using CID)."""
     try:
         cid = re.sub(r"[^0-9]", "", pubchem_id)  # mantener solo dígitos
         if not cid:
             return None
+        
         # Extraer InChI e InChIKey
         url_inchi = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/InChI,InChIKey/JSON"
         r_inchi = requests.get(url_inchi, timeout=10)
         r_inchi.raise_for_status()
-        data_inchi = r_inchi.json().get("PropertyTable", {}).get("Properties", [{}])[0]
+        data_inchi = (
+            r_inchi.json()
+            .get("PropertyTable", {})
+            .get("Properties", [{}])[0]
+        )
         # Extraer crossreferences (xrefs)
         url_xrefs = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/xrefs/RegistryID/JSON"
         r_xrefs = requests.get(url_xrefs, timeout=10)
         r_xrefs.raise_for_status()
-        data_xrefs = r_xrefs.json().get("PropertyTable", {}).get("Properties", [{}])[0]
+        data_xrefs = (
+            r_xrefs.json()
+            .get("InformationList", {})
+            .get("Information", [{}])[0]
+            .get("RegistryID", [])
+        )
 
-# https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/24883435/xrefs/RegistryID,SourceName/JSON
-        keg_id = None # hacer una regexp para C+numeros (C12345)
-        chebi = None # startswith("CHEBI:")
-        hmdb = None # startswith("HMDB")
+        kegg_id = next((x for x in data_xrefs if re.fullmatch(r"C\d{5}", x)), None) # C+numeros
+        chebi_id = next((x for x in data_xrefs if x.startswith("CHEBI:")), None)
+        hmdb_id = next((x for x in data_xrefs if x.startswith("HMDB")), None)
+
         res = {
             "PubChem": cid,
-            "KEGG": data_xrefs.get("RegistryID"[keg_id]),
-            "HMDB": data_xrefs.get("RegistryID"[hmdb]),
-            "ChEBI": data_xrefs.get("RegistryID"[chebi]),
+            "KEGG": kegg_id,
+            "HMDB": hmdb_id,
+            "ChEBI": chebi_id,
             "InChI": data_inchi.get("InChI"),
             "InChIKey": data_inchi.get("InChIKey")
         }
@@ -293,42 +282,3 @@ output_file = input_file.replace(".xlsx", "_updated.xlsx")
 wb.save(output_file)
 print(f"Archivo guardado como: {output_file}")
 print(f"Tiempo total: {sum(total_time):.2f} s")
-
-
-#######################################################################################
-#                           CheBI + PubChem REST API                                     
-#######################################################################################
-# El siguiente código:
-    # 1. Con los IDs no crossreferenciados que pertenezcan a CheBi o PubChem del
-    #    not_crossreferenced = set()
-    # 2. Usa las API REST (https://pubchem.ncbi.nlm.nih.gov/docs/rdf-rest) 
-    #   (https://jcheminf.biomedcentral.com/articles/10.1186/s13321-016-0123-9)
-    #    para obtener los datos
-    # 4. Rellena las columnas (PubChem, KEGG, HMDB, ChEBI, UniProt, InChI, InChIKey) 
-    #    del Excel
-
-# --- Processing sheet: Sheet1 ---
-# Todas las IDs cruzadas en Sheet1.
-
-# --- Processing sheet: Sheet2 ---
-# IDs not crossreferenced in Sheet2: 
-# ['155920193', '42776911', 'A7AZH2', 'A7B3K3', 'A7B4V1', 
-# 'CHEBI:133678', 'CHEBI:172393', 'P0AET8', 'P21215']
-
-# --- Processing sheet: Sheet3 ---
-# IDs not crossreferenced in Sheet3: 
-# ['71448933', '91828270', 'A7AZH2', 'A7B3K3', 'A7B4V1', 'C8WGQ3', 
-# 'C8WMP0', 'P0AET8', 'Q5LA59']
-
-# --- Processing sheet: Sheet4 ---
-# IDs not crossreferenced in Sheet4: 
-# ['137333454', 'A7B4V1', 'P0AET8', 'P52843', 'Q4LDG0', 'Q91W64']
-
-# --- Processing sheet: Sheet5 ---
-# IDs not crossreferenced in Sheet5: 
-# ['11966205', '134364', '644071', 'A7AZH2', 'A7B3K3', 'B0NAQ4', 'C8WGQ3', 
-# 'C8WMP0', 'P07914', 'P19337', 'P19409', 'P19410', 'P19412', 'P19413', 'P32370']
-
-# https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/644071/property/InChI,InChIKey,Title/JSON
-# https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/644071/xrefs/RegistryID/JSON
-
