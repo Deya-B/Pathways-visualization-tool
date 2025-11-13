@@ -1,0 +1,44 @@
+INFO:
+--- Procesando hoja: Sheet1 ---
+INFO:  Tiempo ejecución hoja: 37.04 s
+INFO:
+--- Procesando hoja: Sheet2 ---
+INFO:  Tiempo ejecución hoja: 39.13 s
+INFO:
+--- Procesando hoja: Sheet3 ---
+INFO:  Tiempo ejecución hoja: 32.00 s
+INFO:
+--- Procesando hoja: Sheet4 ---
+INFO:  Tiempo ejecución hoja: 16.61 s
+INFO:
+--- Procesando hoja: Sheet5 ---
+INFO:  Tiempo ejecución hoja: 35.89 s
+INFO:
+Archivo guardado como: c:/Users/dborrotoa/Desktop/TFM/PathwayBA_list_updated.xlsx
+INFO:Tiempo total: 160.67 s
+INFO:
+--- Procesando hoja: Sheet1 ---
+INFO:  LIPID MAPS: 41  |  UniProt: 0  |  Otros: 0
+INFO:  Tiempo ejecución hoja: 37.72 s
+INFO:
+--- Procesando hoja: Sheet2 ---
+INFO:  LIPID MAPS: 26  |  UniProt: 5  |  Otros: 4
+INFO:  Tiempo ejecución hoja: 39.87 s
+INFO:
+--- Procesando hoja: Sheet3 ---
+INFO:  LIPID MAPS: 20  |  UniProt: 10  |  Otros: 2
+INFO:  Tiempo ejecución hoja: 32.18 s
+INFO:
+--- Procesando hoja: Sheet4 ---
+INFO:  LIPID MAPS: 10  |  UniProt: 6  |  Otros: 1
+INFO:  Tiempo ejecución hoja: 17.17 s
+INFO:
+--- Procesando hoja: Sheet5 ---
+INFO:  LIPID MAPS: 19  |  UniProt: 12  |  Otros: 3
+INFO:  Tiempo ejecución hoja: 36.91 s
+INFO:IDs no crossreferenciados: []
+INFO:
+Log guardado como: log.txt
+INFO:
+Archivo guardado como: c:/Users/dborrotoa/Desktop/TFM/PathwayBA_list_updated.xlsx
+INFO:Tiempo total: 163.85 s
