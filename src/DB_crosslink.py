@@ -56,21 +56,7 @@ UNIPROT_PATTERN = r"([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0
     # Ref.: https://www.uniprot.org/help/accession_numbers
 
 
-######################## READING AND CLASSIFICATION FUNCTIONS #########################
-
-## For XLSX
-# def read_input_excel(input_file):
-#     """Loads data from Excel and returns {sheet_name: DataFrame}."""
-#     wb = load_workbook(input_file)
-#     sheet_dfs = {}
-#     for sheet_name in wb.sheetnames:
-#         ws = wb[sheet_name]
-#         df = pd.DataFrame(ws.values)
-#         df.columns = df.iloc[0] # Primera fila = header
-#         df = df[2:]             # Saltamos header y nombre pathway
-#         sheet_dfs[sheet_name] = (ws, df)
-#     return wb, sheet_dfs
-
+############################## CLASSIFICATION FUNCTIONS ################################
 
 def classify_ids(df):
     """Separates LM_IDs, UniProt_IDs and other IDs from the 'ID' column."""
@@ -286,49 +272,6 @@ def update_df_with_crossrefs(df, results):
                 df.at[idx, col] = ""
     return df
 
-########################## ESCRITURA EN EXCEL ##########################
-
-## For XLSX
-# def update_excel(ws, df, results):
-#     """Escribe resultados de cross-reference en la hoja de Excel."""
-#     header = [cell.value for cell in ws[1]]
-#     header_lower = [str(h).lower() if h else "" for h in header]
-#     target_col_idx = {}
-#     for col in TARGET_COLS:
-#         if col.lower() in header_lower:
-#             target_col_idx[col] = header_lower.index(col.lower()) + 1
-#     if "id" not in header_lower:
-#         logging.warning("No 'ID' header, saltando hoja.")
-#         return
-#     id_idx = header_lower.index("id") + 1
-#     for row in ws.iter_rows(min_row=2, values_only=False):
-#         id_cell = row[id_idx - 1]
-#         id_val = str(id_cell.value).strip() if pd.notna(id_cell.value) else ''
-#         if not id_val:
-#             continue
-#         sub_ids = [x.strip() for x in id_val.split(";") if x.strip()]
-#         merged_info = {k: [] for k in TARGET_COLS}
-#         new_id_val = []
-#         for sub_id in sub_ids:
-#             info = results.get(sub_id)
-#             if not info and re.match(UNIPROT_PATTERN, sub_id):
-#                 info = results.get(sub_id)
-#             if info:
-#                 lm_real = info.get("LM_ID")
-#                 new_id_val.append(lm_real if lm_real else sub_id)
-#                 for col in TARGET_COLS:
-#                     v = info.get(col)
-#                     if v:
-#                         for part in [p.strip() for p in str(v).split(";") if p.strip()]:
-#                             if part not in merged_info[col]:
-#                                 merged_info[col].append(part)
-#             else:
-#                 new_id_val.append(sub_id)
-#         id_cell.value = ";".join(new_id_val)
-#         for col_name, col_idx in target_col_idx.items():
-#             vals = merged_info.get(col_name) or []
-#             if vals:
-#                 ws.cell(row=id_cell.row, column=col_idx, value=";".join(vals))
 
 ########################## MAIN CONTROLADOR #####################################
 
@@ -361,26 +304,6 @@ def main(input_file):
     logging.info(f" Archivo guardado en: {output_path}\n")
 
 
-## For XLSX
-# def main(input_file):
-#     wb, sheet_dfs = read_input_excel(input_file)
-#     total_time = []
-#     for sheet_name, (ws, df) in sheet_dfs.items():
-#         logging.info(f"\n--- Procesando hoja: {sheet_name} ---")
-#         start = time.perf_counter()
-#         results, not_crossreferenced_final = integrate_crossrefs(df)
-#         update_excel(ws, df, results)
-#         end = time.perf_counter()
-#         total_time.append(end - start)
-#         logging.info(f"  Tiempo ejecución hoja: {end - start:.2f} s")
-#     output_file = input_file.replace(".xlsx", "_updated.xlsx")
-#     wb.save(output_file)
-#     logging.info(f"IDs no crossreferenciados: {sorted(not_crossreferenced_final)}")
-#     logging.info(f"\nLog guardado como: log.txt")
-#     logging.info(f"\nArchivo guardado como: {output_file}")
-#     logging.info(f"Tiempo total: {sum(total_time):.2f} s")
-
-
 ############################ ENTRY POINT ########################################
 
 if __name__ == "__main__":
@@ -390,8 +313,3 @@ if __name__ == "__main__":
         INPUT_FILE = os.path.join(pathways_folder, file)
         main(INPUT_FILE)
 
-
-    # For XLSX
-    # INPUT_FILE_xlsx = "c:/Users/dborrotoa/Desktop/TFM/PathwayBA_list.xlsx"
-    # INPUT_FILE_xlsx_home = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/PathwayBA_list.xlsx"
-  
