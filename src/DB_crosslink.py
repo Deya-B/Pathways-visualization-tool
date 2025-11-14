@@ -19,7 +19,6 @@
 ########################################### MAIN ############################################
 # Estuctura:
 # main.py
-# ├── read_input_excel()        # Carga datos desde Excel y devuelve {sheet_name: DataFrame}
 # ├── classify_ids()            # Separa LM, UniProt, y otros IDs
 # ├── fetch_lipidmaps_info()    # Busca información y cross-referencias de LIPID MAPS
 # ├── fetch_pubchem_info()      # Busca información y cross-referencias de PubChem
@@ -123,7 +122,7 @@ def fetch_lipidmaps_info(query_id):
                 "InChI": data.get("inchi")
             }
         else:
-            logging.error(f"Formato inesperado para {query_id}: {type(data)}")
+            logging.error(f"Unexpected format for {query_id}: {type(data)}")
             return None
     except (requests.exceptions.RequestException, ValueError) as e:
         logging.warning(f"No data for {query_id} ({e})")
@@ -131,18 +130,18 @@ def fetch_lipidmaps_info(query_id):
 
 
 def fetch_pubchem_info(pubchem_id):
-    """Busca info por CID en la API de PubChem."""
+    """Search for information by CID in the PubChem API."""
     try:
         cid = re.sub(r"[^0-9]", "", pubchem_id) # mantener solo dígitos
         if not cid:
             return None
         
-        # Extraer InChI e InChIKey
+        # Extract InChI and InChIKey
         url_inchi = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/InChI,InChIKey/JSON"
         r_inchi = requests.get(url_inchi, timeout=10)
         r_inchi.raise_for_status()
         data_inchi = r_inchi.json().get("PropertyTable", {}).get("Properties", [{}])[0]
-        # Extraer crossreferences (xrefs)
+        # Extract crossreferences (xrefs)
         url_xrefs = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/xrefs/RegistryID/JSON"
         r_xrefs = requests.get(url_xrefs, timeout=10)
         r_xrefs.raise_for_status()
@@ -164,7 +163,7 @@ def fetch_pubchem_info(pubchem_id):
 
 
 def fetch_refseq_from_uniprot(uniprot_id):
-    """Busca acceso RefSeq cruzado en la API de UniProt."""
+    """Looking for cross-RefSeq access in the UniProt API."""
     try:
         url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}?format=json"
         r = requests.get(url, timeout=10)
@@ -185,11 +184,11 @@ def fetch_refseq_from_uniprot(uniprot_id):
         return None
     
 
-###################### INTEGRACIÓN DE CROSS-REFERENCIAS #########################
+############################ CROSS-REFERENCE INTEGRATION ###############################
 
 def integrate_crossrefs(df):
-    """Une resultados de LipidMaps, PubChem y UniProt para todos los IDs."""
-    # Clasificar IDs
+    """Joins results from LipidMaps, PubChem and UniProt for all IDs."""
+    # Classify IDs
     seen_queries = set()
     lm_ids, uniprot_ids, other_ids = classify_ids(df)
     # Totales por tipo:
@@ -197,7 +196,7 @@ def integrate_crossrefs(df):
 
     results = {}
 
-    # Consultar LipidMaps
+    # Query LipidMaps
     for query_id in lm_ids + other_ids:
         info = fetch_lipidmaps_info(query_id)
         seen_queries.add(query_id)
@@ -213,7 +212,7 @@ def integrate_crossrefs(df):
                 results[uni] = info
         results[query_id] = info
         # time.sleep(0.25)
-    # IDs no crossreferenciadas
+    # IDs not crossreferenced
     not_crossreferenced = set()
     for id_raw in df[ID_LABEL]:
         id_str = str(id_raw).strip() if pd.notna(id_raw) else ''
@@ -223,7 +222,7 @@ def integrate_crossrefs(df):
             if sub not in results:
                 not_crossreferenced.add(sub)
 
-    # Consultar UniProt para ids sin cruzar
+    # Query UniProt for uncrossed ids
     for uid in uniprot_ids:
         if uid not in results:
             info = fetch_refseq_from_uniprot(uid)
@@ -234,7 +233,7 @@ def integrate_crossrefs(df):
                 not_crossreferenced.add(uid)
             # time.sleep(0.2)
 
-    # Consultar PubChem para ids numéricos sin cruzar
+    # Query PubChem for uncrossed numeric ids
     for qid in sorted(not_crossreferenced):
         if re.match(r"^\d+$", qid):
             info = fetch_pubchem_info(qid)
@@ -244,7 +243,7 @@ def integrate_crossrefs(df):
                 not_crossreferenced.discard(qid)
             # time.sleep(0.3)
 
-    # Excluir UniProt del resumen
+    # Exclude UniProt from summary
     not_crossreferenced_final = [
         x for x in sorted(seen_queries)
         if x not in results and not re.match(UNIPROT_PATTERN, x)
@@ -253,10 +252,10 @@ def integrate_crossrefs(df):
     return results, not_crossreferenced_final
     
 
-############################# ESCRITURA en DataFrame #############################
+################################ WRITING in DataFrame ###############################
 
 def update_df_with_crossrefs(df, results):
-    """Actualiza el DataFrame con los crossrefs encontrados (modifica las TARGET_COLS)."""
+    """Update the DataFrame with the crossrefs found (modify the TARGET_COLS)."""
     for idx, row in df.iterrows():
         id_str = str(row[ID_LABEL]).strip() if pd.notna(row[ID_LABEL]) else ""
         sub_ids = [x.strip() for x in id_str.split(";") if x.strip()]
@@ -273,9 +272,17 @@ def update_df_with_crossrefs(df, results):
     return df
 
 
-########################## MAIN CONTROLADOR #####################################
+############################## MAIN CONTROLADOR #####################################
 
 def main(input_file):
+    # Read input
+    df = pd.read_csv(input_file, sep='\t', encoding="cp1252").dropna(axis=0, how='all').dropna(axis=1, how='all')
+    df2 = df[["ID","DataBase"]]
+    ids_list = df2.to_numpy()
+
+# TODO: Addapt the new and faster numpy idea
+
+
     # Read input
     total_time = []
     start = time.perf_counter()
@@ -301,7 +308,7 @@ def main(input_file):
     total_time.append(end - start)
     logging.info(f"     Tiempo ejecución hoja: {end - start:.2f} s")
     logging.info(f"     IDs no crossreferenciados: {len(not_crossreferenced_final)}")
-    logging.info(f" Archivo guardado en: {output_path}\n")
+    logging.info(f" ** Archivo guardado en: {output_path} **\n")
 
 
 ############################ ENTRY POINT ########################################
