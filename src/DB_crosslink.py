@@ -16,7 +16,7 @@
 #######################################################################################
 
 
-########################################### MAIN ############################################
+########################################### MAIN ######################################
 # Estuctura:
 # main.py
 # ├── classify_ids()            # Separa LM, UniProt, y otros IDs
@@ -29,12 +29,13 @@
 
 import os
 import pandas as pd
+import numpy as np
 import requests
 import time
 import logging
 import re
 
-############################# CONFIGURATION AND CONSTANTS ##############################
+############################# CONFIGURATION AND CONSTANTS #############################
 
 # Logging configuration
 logging.basicConfig(
@@ -43,9 +44,13 @@ logging.basicConfig(
     # filename="log.txt"
 )
 
+# Variables with accepted variants
 ID_LABEL = "ID"
-
-TARGET_COLS = [         # Columns of interest
+PCHEM = ["pubchem cid", "pubchem"]
+LM = ["lipidmaps"]
+UPROT = ["uniprot"]
+# Columns of interest
+TARGET_COLS = [         
     "KEGG", "PubChem", "HMDB", "ChEBI",
     "RefSeq_Id", "UniProt", "InChIKey", "InChI"
 ]
@@ -55,51 +60,59 @@ UNIPROT_PATTERN = r"([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0
     # Ref.: https://www.uniprot.org/help/accession_numbers
 
 
-############################## CLASSIFICATION FUNCTIONS ################################
+############################## CLASSIFICATION FUNCTIONS ###############################
 
-def classify_ids(df):
-    """Separates LM_IDs, UniProt_IDs and other IDs from the 'ID' column."""
-    seen, lm_ids, uniprot_ids, other_ids = set(), [], [], []
-    for id_raw in df[ID_LABEL]:
-        id_str = str(id_raw).strip() if pd.notna(id_raw) else ""
-        if not id_str:
-            continue
-        for sub in [s.strip() for s in id_str.split(";") if s.strip()]:
-            if sub in seen:
-                continue
-            seen.add(sub)
-            if sub.startswith("LM"):
-                lm_ids.append(sub)
-            elif re.match(UNIPROT_PATTERN, sub):
-                uniprot_ids.append(sub)
-            else:
-                other_ids.append(sub)
-    return lm_ids, uniprot_ids, other_ids
+def classify_ids(ids_db_list):
+    """Filtering the 'ID' column per DataBase."""
+    # Extract ID's (column 0) where DataBase is matching
+    lm_ids = ids_db_list[np.isin(ids_db_list[:, 1], LM), 0]
+    uni_ids =  ids_db_list[np.isin(ids_db_list[:, 1], UPROT), 0]
+    pchem_cids = ids_db_list[np.isin(ids_db_list[:, 1], PCHEM), 0]
+    return lm_ids,uni_ids,pchem_cids
+
+# def classify_ids(df):
+#     """Separates LM_IDs, UniProt_IDs and other IDs from the 'ID' column."""
+    # seen, lm_ids, uniprot_ids, other_ids = set(), [], [], []
+    # for id_raw in df[ID_LABEL]:
+    #     id_str = str(id_raw).strip() if pd.notna(id_raw) else ""
+    #     if not id_str:
+    #         continue
+    #     for sub in [s.strip() for s in id_str.split(";") if s.strip()]:
+    #         if sub in seen:
+    #             continue
+    #         seen.add(sub)
+    #         if sub.startswith("LM"):
+    #             lm_ids.append(sub)
+    #         elif re.match(UNIPROT_PATTERN, sub):
+    #             uniprot_ids.append(sub)
+    #         else:
+    #             other_ids.append(sub)
+    # return lm_ids, uniprot_ids, other_ids
 
 
-############################# FETCHERS (APIs) ##########################################
+############################# FETCHERS (APIs) #########################################
 
 def fetch_lipidmaps_info(query_id):
-    """Search for information using LM_ID or UniProt in the LipidMaps API."""
-    if not query_id:
-        return None
-    if query_id.startswith("LMP"):
-        ext = "protein/lmp_id" # extension for LIPID MAPS protein ID queries
+    """Search for information using LipidMaps/UniProt IDs in the LipidMaps REST API."""
+    # Obtain context and identifier type segment for DataBase endpoint
+        # https://www.lipidmaps.org/rest/{context}/{input_item}/{input_value}/{output_item}
+    if query_id.startswith("LMP"):      # /{context}/{input_item}
+        endpoint = "protein/lmp_id"     # for LM protein ID queries
     elif re.match(UNIPROT_PATTERN, query_id):
-        ext = "protein/uniprot_id" # extension for UniProt protein ID queries
+        endpoint = "protein/uniprot_id" # for UniProt protein ID queries
     else:
-        ext = "compound/lm_id" # extension for LIPID MAPS metabolite ID queries
-    url = f"https://www.lipidmaps.org/rest/{ext}/{query_id}/all"
+        endpoint = "compound/lm_id"     # for LipidMaps metabolite ID queries
+    
+    url = f"https://www.lipidmaps.org/rest/{endpoint}/{query_id}/all"
 
-    # Query the database
-    try:
+    try: # Query the database
         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         r.raise_for_status()
         data = r.json()
         if isinstance(data, list) and not data:
             return None
         
-        # PROTEIN case: multiple rows, use only Row1
+        # PROTEIN case: multiple rows in response(r), use only Row1
         if isinstance(data, dict) and any(k.startswith('Row') for k in data):
             first_row = data.get('Row1') or {}
             return {
@@ -107,7 +120,7 @@ def fetch_lipidmaps_info(query_id):
                 "RefSeq_Id": first_row.get("refseq_id"),
                 "UniProt": first_row.get("uniprot_id")
             }
-        # METABOLITE/PROTEIN case: flat dict
+        # METABOLITE/PROTEIN case: flat dict in response
         elif isinstance(data, dict):
             lm_from_data = data.get("lm_id") or data.get("lmp_id") or None # extract LM id
             return {
@@ -129,43 +142,10 @@ def fetch_lipidmaps_info(query_id):
         return None
 
 
-def fetch_pubchem_info(pubchem_id):
-    """Search for information by CID in the PubChem API."""
-    try:
-        cid = re.sub(r"[^0-9]", "", pubchem_id) # mantener solo dígitos
-        if not cid:
-            return None
-        
-        # Extract InChI and InChIKey
-        url_inchi = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/InChI,InChIKey/JSON"
-        r_inchi = requests.get(url_inchi, timeout=10)
-        r_inchi.raise_for_status()
-        data_inchi = r_inchi.json().get("PropertyTable", {}).get("Properties", [{}])[0]
-        # Extract crossreferences (xrefs)
-        url_xrefs = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/xrefs/RegistryID/JSON"
-        r_xrefs = requests.get(url_xrefs, timeout=10)
-        r_xrefs.raise_for_status()
-        data_xrefs = r_xrefs.json().get("InformationList", {}).get("Information", [{}])[0].get("RegistryID", [])
-        kegg_id = next((x for x in data_xrefs if re.fullmatch(r"C\d{5}", x)), None)
-        chebi_id = next((x for x in data_xrefs if x.startswith("CHEBI:")), None)
-        hmdb_id = next((x for x in data_xrefs if x.startswith("HMDB")), None)
-        return {
-            "PubChem": cid,
-            "KEGG": kegg_id,
-            "HMDB": hmdb_id,
-            "ChEBI": chebi_id,
-            "InChI": data_inchi.get("InChI"),
-            "InChIKey": data_inchi.get("InChIKey")
-        }
-    except Exception as e:
-        logging.warning(f"PubChem no data for {pubchem_id}: {e}")
-        return None
-
-
-def fetch_refseq_from_uniprot(uniprot_id):
+def fetch_refseq_from_uniprot(query_id):
     """Looking for cross-RefSeq access in the UniProt API."""
     try:
-        url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}?format=json"
+        url = f"https://rest.uniprot.org/uniprotkb/{query_id}?format=json"
         r = requests.get(url, timeout=10)
         r.raise_for_status()
         data = r.json()
@@ -176,83 +156,280 @@ def fetch_refseq_from_uniprot(uniprot_id):
             if xref.get("database") == "RefSeq":
                 refseq_ids.append(xref.get("id"))
         return {
-            "UniProt": uniprot_id,
+            "UniProt": query_id,
             "RefSeq_Id": ",".join(refseq_ids) if refseq_ids else "NaN"
         }
     except Exception as e:
-        logging.warning(f"UniProt no data for {uniprot_id}: {e}")
+        logging.warning(f"UniProt no data for {query_id}: {e}")
         return None
     
 
-############################ CROSS-REFERENCE INTEGRATION ###############################
+def fetch_pubchem_info(query_id):
+    """Search for information by CID in the PubChem API.""" 
+    try:    
+        # Extract InChI and InChIKey
+        url_inchi = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{query_id}/property/InChI,InChIKey/JSON"
+        r_inchi = requests.get(url_inchi, timeout=10)
+        r_inchi.raise_for_status()
+        data_inchi = r_inchi.json().get("PropertyTable", {}).get("Properties", [{}])[0]
+        # Extract crossreferences (xrefs)
+        url_xrefs = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{query_id}/xrefs/RegistryID/JSON"
+        r_xrefs = requests.get(url_xrefs, timeout=10)
+        r_xrefs.raise_for_status()
+        data_xrefs = r_xrefs.json().get("InformationList", {}).get("Information", [{}])[0].get("RegistryID", [])
+        kegg_id = next((x for x in data_xrefs if re.fullmatch(r"C\d{5}", x)), None)
+        chebi_id = next((x for x in data_xrefs if x.startswith("CHEBI:")), None)
+        hmdb_id = next((x for x in data_xrefs if x.startswith("HMDB")), None)
+        return {
+            "PubChem": query_id,
+            "KEGG": kegg_id,
+            "HMDB": hmdb_id,
+            "ChEBI": chebi_id,
+            "InChI": data_inchi.get("InChI"),
+            "InChIKey": data_inchi.get("InChIKey")
+        }
+    except Exception as e:
+        logging.warning(f"PubChem no data for {query_id}: {e}")
+        return None
 
-def integrate_crossrefs(df):
+
+
+# def fetch_lipidmaps_info(query_id):
+#     """Search for information using LipidMaps/UniProt ID in the LipidMaps API."""
+#     if not query_id:
+#         return None
+#     if query_id.startswith("LMP"):
+#         ext = "protein/lmp_id" # extension for LIPID MAPS protein ID queries
+#     elif re.match(UNIPROT_PATTERN, query_id):
+#         ext = "protein/uniprot_id" # extension for UniProt protein ID queries
+#     else:
+#         ext = "compound/lm_id" # extension for LIPID MAPS metabolite ID queries
+#     url = f"https://www.lipidmaps.org/rest/{ext}/{query_id}/all"
+
+#     # Query the database
+#     try:
+#         r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+#         r.raise_for_status()
+#         data = r.json()
+#         if isinstance(data, list) and not data:
+#             return None
+        
+#         # PROTEIN case: multiple rows, use only Row1
+#         if isinstance(data, dict) and any(k.startswith('Row') for k in data):
+#             first_row = data.get('Row1') or {}
+#             return {
+#                 "LM_ID": first_row.get("lm_id") or first_row.get("lmp_id") or query_id,
+#                 "RefSeq_Id": first_row.get("refseq_id"),
+#                 "UniProt": first_row.get("uniprot_id")
+#             }
+#         # METABOLITE/PROTEIN case: flat dict
+#         elif isinstance(data, dict):
+#             lm_from_data = data.get("lm_id") or data.get("lmp_id") or None # extract LM id
+#             return {
+#                 "LM_ID": lm_from_data if lm_from_data else (query_id if query_id.startswith("LM") else None),
+#                 "KEGG": data.get("kegg_id"),
+#                 "PubChem": data.get("pubchem_cid"),
+#                 "HMDB": data.get("hmdb_id"),
+#                 "ChEBI": data.get("chebi_id"),
+#                 "RefSeq_Id": data.get("refseq_id"),
+#                 "UniProt": data.get("uniprot_id"),
+#                 "InChIKey": data.get("inchi_key"),
+#                 "InChI": data.get("inchi")
+#             }
+#         else:
+#             logging.error(f"Unexpected format for {query_id}: {type(data)}")
+#             return None
+#     except (requests.exceptions.RequestException, ValueError) as e:
+#         logging.warning(f"No data for {query_id} ({e})")
+#         return None
+
+
+# def fetch_pubchem_info(pubchem_id):
+#     """Search for information by CID in the PubChem API."""
+#     try:
+#         cid = re.sub(r"[^0-9]", "", pubchem_id) # mantener solo dígitos
+#         if not cid:
+#             return None
+        
+#         # Extract InChI and InChIKey
+#         url_inchi = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/property/InChI,InChIKey/JSON"
+#         r_inchi = requests.get(url_inchi, timeout=10)
+#         r_inchi.raise_for_status()
+#         data_inchi = r_inchi.json().get("PropertyTable", {}).get("Properties", [{}])[0]
+#         # Extract crossreferences (xrefs)
+#         url_xrefs = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{cid}/xrefs/RegistryID/JSON"
+#         r_xrefs = requests.get(url_xrefs, timeout=10)
+#         r_xrefs.raise_for_status()
+#         data_xrefs = r_xrefs.json().get("InformationList", {}).get("Information", [{}])[0].get("RegistryID", [])
+#         kegg_id = next((x for x in data_xrefs if re.fullmatch(r"C\d{5}", x)), None)
+#         chebi_id = next((x for x in data_xrefs if x.startswith("CHEBI:")), None)
+#         hmdb_id = next((x for x in data_xrefs if x.startswith("HMDB")), None)
+#         return {
+#             "PubChem": cid,
+#             "KEGG": kegg_id,
+#             "HMDB": hmdb_id,
+#             "ChEBI": chebi_id,
+#             "InChI": data_inchi.get("InChI"),
+#             "InChIKey": data_inchi.get("InChIKey")
+#         }
+#     except Exception as e:
+#         logging.warning(f"PubChem no data for {pubchem_id}: {e}")
+#         return None
+
+
+# def fetch_refseq_from_uniprot(uniprot_id):
+#     """Looking for cross-RefSeq access in the UniProt API."""
+#     try:
+#         url = f"https://rest.uniprot.org/uniprotkb/{uniprot_id}?format=json"
+#         r = requests.get(url, timeout=10)
+#         r.raise_for_status()
+#         data = r.json()
+
+#         # Extraer IDs RefSeq
+#         refseq_ids = []
+#         for xref in data.get("uniProtKBCrossReferences", []):
+#             if xref.get("database") == "RefSeq":
+#                 refseq_ids.append(xref.get("id"))
+#         return {
+#             "UniProt": uniprot_id,
+#             "RefSeq_Id": ",".join(refseq_ids) if refseq_ids else "NaN"
+#         }
+#     except Exception as e:
+#         logging.warning(f"UniProt no data for {uniprot_id}: {e}")
+#         return None
+    
+
+############################ CROSS-REFERENCE INTEGRATION ##############################
+
+def integrate_crossrefs(ids_db_list):
     """Joins results from LipidMaps, PubChem and UniProt for all IDs."""
     # Classify IDs
-    seen_queries = set()
-    lm_ids, uniprot_ids, other_ids = classify_ids(df)
+    lm_ids,uni_ids,pchem_cids = classify_ids(ids_db_list)
+
+    # Extract DataBase/s which will not be mapped
+    mapped_db = set(LM) | set(UPROT) | set(PCHEM)
+    databases = np.unique(ids_db_list[:, 1])
+    missing_db = [db for db in databases if db not in mapped_db and db != 'nan']   
     # Totales por tipo:
-    logging.info(f"  LIPID MAPS: {len(lm_ids)}  |  UniProt: {len(uniprot_ids)}  |  Otros: {len(other_ids)}")
-
+    logging.info(
+            f"\tLIPID MAPS: {len(lm_ids)} | "
+            f"UniProt: {len(uni_ids)} | "
+            f"PubChem: {len(pchem_cids)} | "
+            f"Databases that will not be mapped: {len(missing_db)} > " 
+            f"{', '.join(missing_db) if missing_db else 'N/A'}"
+        )
+    
     results = {}
-
-    # Query LipidMaps
-    for query_id in lm_ids + other_ids:
+    # Query LipidMaps DB (for LM ID)
+    for query_id in lm_ids:
         info = fetch_lipidmaps_info(query_id)
-        seen_queries.add(query_id)
         if not info:
-            # time.sleep(0.25)
             continue
-        lm_key = info.get("LM_ID")
+        lm_key = info.get("LM_ID") # use of the LM_ID for robustness and consistency
         if lm_key:
             results[lm_key] = info
-        uni_field = info.get("UniProt")
-        if uni_field:
-            for uni in [u.strip() for u in str(uni_field).split(";") if u.strip()]:
-                results[uni] = info
-        results[query_id] = info
+## Query LipidMaps DB (for UniProt_ID) ### >>> SI TENEMOS QUERY TO UNIPROT DB ESTO NO HACE FALTA...
+    # for query_id in uni_ids:
+    #     uni_field = info.get("UniProt")
+    #     if uni_field:
+    #         for uni in [u.strip() for u in str(uni_field).split(";") if u.strip()]:
+    #             results[uni] = info
+        # results[query_id] = info
         # time.sleep(0.25)
-    # IDs not crossreferenced
-    not_crossreferenced = set()
-    for id_raw in df[ID_LABEL]:
-        id_str = str(id_raw).strip() if pd.notna(id_raw) else ''
-        if not id_str:
-            continue
-        for sub in [s.strip() for s in id_str.split(";") if s.strip()]:
-            if sub not in results:
-                not_crossreferenced.add(sub)
 
-    # Query UniProt for uncrossed ids
-    for uid in uniprot_ids:
-        if uid not in results:
-            info = fetch_refseq_from_uniprot(uid)
-            seen_queries.add(uid)
+    # Query UniProt DB
+    for query_id in uni_ids:
+        if query_id not in results:
+            info = fetch_refseq_from_uniprot(query_id)
             if info:
-                results[uid] = info
+                results[query_id] = info
             else:
-                not_crossreferenced.add(uid)
+                logging.info(f"NO xrefs for {query_id}.")
             # time.sleep(0.2)
 
     # Query PubChem for uncrossed numeric ids
-    for qid in sorted(not_crossreferenced):
-        if re.match(r"^\d+$", qid):
-            info = fetch_pubchem_info(qid)
-            seen_queries.add(qid)
-            if info:
-                results[qid] = info
-                not_crossreferenced.discard(qid)
+    for query_id in pchem_cids:
+        info = fetch_pubchem_info(query_id)
+        if info:
+            results[query_id] = info
+        else:
+            logging.info(f"NO xrefs for {query_id}.")
             # time.sleep(0.3)
 
-    # Exclude UniProt from summary
-    not_crossreferenced_final = [
-        x for x in sorted(seen_queries)
-        if x not in results and not re.match(UNIPROT_PATTERN, x)
-    ]
+    return results
+
+
+
+
+
+
+# def integrate_crossrefs(df):
+#     """Joins results from LipidMaps, PubChem and UniProt for all IDs."""
+#     # Classify IDs
+#     seen_queries = set()
+#     lm_ids, uniprot_ids, other_ids = classify_ids(df)
+#     # Totales por tipo:
+#     logging.info(f"  LIPID MAPS: {len(lm_ids)}  |  UniProt: {len(uniprot_ids)}  |  Otros: {len(other_ids)}")
+
+#     results = {}
+
+#     # Query LipidMaps
+#     for query_id in lm_ids + other_ids:
+#         info = fetch_lipidmaps_info(query_id)
+#         seen_queries.add(query_id)
+#         if not info:
+#             # time.sleep(0.25)
+#             continue
+#         lm_key = info.get("LM_ID")
+#         if lm_key:
+#             results[lm_key] = info
+#         uni_field = info.get("UniProt")
+#         if uni_field:
+#             for uni in [u.strip() for u in str(uni_field).split(";") if u.strip()]:
+#                 results[uni] = info
+#         results[query_id] = info
+#         # time.sleep(0.25)
+#     # IDs not crossreferenced
+#     not_crossreferenced = set()
+#     for id_raw in df[ID_LABEL]:
+#         id_str = str(id_raw).strip() if pd.notna(id_raw) else ''
+#         if not id_str:
+#             continue
+#         for sub in [s.strip() for s in id_str.split(";") if s.strip()]:
+#             if sub not in results:
+#                 not_crossreferenced.add(sub)
+
+#     # Query UniProt for uncrossed ids
+#     for uid in uniprot_ids:
+#         if uid not in results:
+#             info = fetch_refseq_from_uniprot(uid)
+#             seen_queries.add(uid)
+#             if info:
+#                 results[uid] = info
+#             else:
+#                 not_crossreferenced.add(uid)
+#             # time.sleep(0.2)
+
+#     # Query PubChem for uncrossed numeric ids
+#     for qid in sorted(not_crossreferenced):
+#         if re.match(r"^\d+$", qid):
+#             info = fetch_pubchem_info(qid)
+#             seen_queries.add(qid)
+#             if info:
+#                 results[qid] = info
+#                 not_crossreferenced.discard(qid)
+#             # time.sleep(0.3)
+
+#     # Exclude UniProt from summary
+#     not_crossreferenced_final = [
+#         x for x in sorted(seen_queries)
+#         if x not in results and not re.match(UNIPROT_PATTERN, x)
+#     ]
     
-    return results, not_crossreferenced_final
+#     return results, not_crossreferenced_final
     
 
-################################ WRITING in DataFrame ###############################
+################################ WRITING in DataFrame #################################
 
 def update_df_with_crossrefs(df, results):
     """Update the DataFrame with the crossrefs found (modify the TARGET_COLS)."""
@@ -272,49 +449,67 @@ def update_df_with_crossrefs(df, results):
     return df
 
 
-############################## MAIN CONTROLADOR #####################################
+############################## MAIN CONTROLADOR #######################################
 
 def main(input_file):
-    # Read input
-    df = pd.read_csv(input_file, sep='\t', encoding="cp1252").dropna(axis=0, how='all').dropna(axis=1, how='all')
-    df2 = df[["ID","DataBase"]]
-    ids_list = df2.to_numpy()
+    # Read input + removing empty rows and columns (".dropna")
+    df_all = (
+        pd.read_csv(input_file, sep='\t', encoding="cp1252")
+        .dropna(axis=0, how='all')
+        .dropna(axis=1, how='all')
+    )
+    # Normalize info in DataBase column -> pass to string and convert to lowercase
+    df_all["DataBase"] = df_all["DataBase"].astype(str).str.strip().str.lower()
 
-# TODO: Addapt the new and faster numpy idea
+    # Extract ID and DataBase columns
+    df_ids_db = df_all[["ID","DataBase"]]
+    ids_db_list = df_ids_db.to_numpy()
 
+    # Check for duplicate IDs
+    duplicated = df_ids_db["ID"].duplicated(keep=False)
+    repeated_ids = df_ids_db.loc[duplicated, "ID"].dropna().unique() # remove NaN
+    if len(repeated_ids) > 0:
+        logging.warning(
+            f"ALERT: The following IDs are repeated: "
+            f"{', '.join(map(str, repeated_ids))}")
+    # classify_ids(ids_db_list)
+    results = integrate_crossrefs(ids_db_list)
+    return print(results)
+    # xids, not_crossreferenced = zip(*results)
 
-    # Read input
-    total_time = []
-    start = time.perf_counter()
-    df = pd.read_csv(input_file, sep='\t', encoding="cp1252").dropna(axis=0, how='all').dropna(axis=1, how='all')
-                                            # con ".dropna" quitamos las filas y columnas vacías
-    base_filename = os.path.basename(input_file)
-    logging.info(f" --- Procesando archivo: {base_filename} ---")
+    # # Read input
+    # total_time = []
+    # start = time.perf_counter()
+    # df = pd.read_csv(input_file, sep='\t', encoding="cp1252").dropna(axis=0, how='all').dropna(axis=1, how='all')
+    #                                         # con ".dropna" quitamos las filas y columnas vacías
+    # base_filename = os.path.basename(input_file)
+    # logging.info(f" --- Procesando archivo: {base_filename} ---")
     
-    # Busqueda de crossreferencias
-    results, not_crossreferenced_final = integrate_crossrefs(df)
-    df = update_df_with_crossrefs(df, results)
+    # # Busqueda de crossreferencias
+    # results, not_crossreferenced_final = integrate_crossrefs(df)
+    # df = update_df_with_crossrefs(df, results)
     
-    # Guardar el df resultante en tsv
-    output_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_updated/"
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-    base_filename_upd = base_filename.replace(".txt", "_updated.txt")
-    output_path = os.path.join(output_folder,base_filename_upd)
-    df.to_csv(output_path, sep='\t')
+    # # Guardar el df resultante en tsv
+    # output_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_updated/"
+    # if not os.path.exists(output_folder):
+    #     os.makedirs(output_folder)
+    # base_filename_upd = base_filename.replace(".txt", "_updated.txt")
+    # output_path = os.path.join(output_folder,base_filename_upd)
+    # df.to_csv(output_path, sep='\t')
 
-    # Tiempo de ejecución y registro de la ejecución
-    end = time.perf_counter()
-    total_time.append(end - start)
-    logging.info(f"     Tiempo ejecución hoja: {end - start:.2f} s")
-    logging.info(f"     IDs no crossreferenciados: {len(not_crossreferenced_final)}")
-    logging.info(f" ** Archivo guardado en: {output_path} **\n")
+    # # Tiempo de ejecución y registro de la ejecución
+    # end = time.perf_counter()
+    # total_time.append(end - start)
+    # logging.info(f"     Tiempo ejecución hoja: {end - start:.2f} s")
+    # logging.info(f"     IDs no crossreferenciados: {len(not_crossreferenced_final)}")
+    # logging.info(f" ** Archivo guardado en: {output_path} **\n")
 
 
-############################ ENTRY POINT ########################################
+################################ ENTRY POINT ##########################################
 
 if __name__ == "__main__":
-    pathways_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_raw/"
+    # pathways_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_raw/"
+    pathways_folder = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/pathways_raw"
     tsv_files = [f for f in os.listdir(pathways_folder) if f.endswith('.txt') or f.endswith('.tsv')]
     for file in tsv_files:
         INPUT_FILE = os.path.join(pathways_folder, file)
