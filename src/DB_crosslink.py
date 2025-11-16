@@ -2,7 +2,7 @@
 #                      LIPID MAPS/PubChem/UniProt REST APIs                           # 
 #######################################################################################
 # El siguiente código:
-    # 1. Lee el Excel con los ID's de LIPID MAPS, PubChem y UniProt.
+    # 1. Lee el Excel con los ID"s de LIPID MAPS, PubChem y UniProt.
     # 2. Filtra los IDs. 
     # 3. 
     #  a) Usa la API REST de LIPID MAPS® (https://www.lipidmaps.org/resources/rest) 
@@ -63,8 +63,8 @@ UNIPROT_PATTERN = r"([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0
 ############################## CLASSIFICATION FUNCTIONS ###############################
 
 def classify_ids(ids_db_list):
-    """Filtering the 'ID' column per DataBase."""
-    # Extract ID's (column 0) where DataBase is matching
+    """Filtering the "ID" column per DataBase."""
+    # Extract ID"s (column 0) where DataBase is matching
     lm_ids = ids_db_list[np.isin(ids_db_list[:, 1], LM), 0]
     uni_ids =  ids_db_list[np.isin(ids_db_list[:, 1], UPROT), 0]
     pchem_cids = ids_db_list[np.isin(ids_db_list[:, 1], PCHEM), 0]
@@ -93,8 +93,8 @@ def fetch_lipidmaps_info(query_id):
             return None
         
         # PROTEIN case: multiple rows in response(r), use only Row1
-        if isinstance(data, dict) and any(k.startswith('Row') for k in data):
-            first_row = data.get('Row1') or {}
+        if isinstance(data, dict) and any(k.startswith("Row") for k in data):
+            first_row = data.get("Row1") or {}
             return {
                 # "LM_ID": first_row.get("lm_id") or first_row.get("lmp_id") or query_id,
                 "RefSeq_Id": first_row.get("refseq_id"),
@@ -124,25 +124,28 @@ def fetch_lipidmaps_info(query_id):
 
 def fetch_refseq_from_uniprot(query_id):
     """Looking for cross-RefSeq access in the UniProt API."""
-    try:
-        url = f"https://rest.uniprot.org/uniprotkb/{query_id}?format=json"
-        r = requests.get(url, timeout=10)
-        r.raise_for_status()
-        data = r.json()
+    uniprot_ids = [x.strip() for x in str(query_id).split(";")] # rows with multiple IDs
+    # all_refseq = []
+    for uid in uniprot_ids:
+        try:
+            url = f"https://rest.uniprot.org/uniprotkb/{uid}?format=json"
+            r = requests.get(url, timeout=10)
+            r.raise_for_status()
+            data = r.json()
 
-        # Extraer IDs RefSeq
-        refseq_ids = []
-        for xref in data.get("uniProtKBCrossReferences", []):
-            if xref.get("database") == "RefSeq":
-                refseq_ids.append(xref.get("id"))
-        return {
-            "UniProt": query_id,
-            "RefSeq_Id": ",".join(refseq_ids) if refseq_ids else "NaN"
-        }
-    except Exception as e:
-        logging.warning(f"UniProt no data for {query_id}: {e}")
-        return None
-    
+            # Extract RefSeq IDs
+            refseq_ids = []
+            for xref in data.get("uniProtKBCrossReferences", []):
+                if xref.get("database") == "RefSeq":
+                    refseq_ids.append(xref.get("id"))
+            return {
+                "UniProt": uid,
+                "RefSeq_Id": ",".join(refseq_ids) if refseq_ids else "NaN"
+            }
+        except Exception as e:
+            logging.warning(f"UniProt no data for {query_id}: {e}")
+            return None
+        
 
 def fetch_pubchem_info(query_id):
     """Search for information by CID in the PubChem API.""" 
@@ -195,29 +198,13 @@ def extract_ids(df):
     repeated_ids = df_ids_db.loc[duplicated, "ID"].dropna().unique() # remove NaN
     if len(repeated_ids) > 0:
         logging.warning(
-            f"ALERT: The following IDs are repeated: "
-            f"{', '.join(map(str, repeated_ids))}")
+            f"\n [ALERT]: The following IDs are duplicated:\n"
+            f"{','.join(map(str, repeated_ids))}\n")
     return ids_db_list
 
 
-def integrate_crossrefs(ids_db_list):
+def integrate_crossrefs(lm_ids,uni_ids,pchem_cids):
     """Joins results from LipidMaps, PubChem and UniProt for all IDs."""
-    # Classify IDs
-    lm_ids,uni_ids,pchem_cids = classify_ids(ids_db_list)
-
-    # Extract DataBase/s which will not be mapped
-    mapped_db = set(LM) | set(UPROT) | set(PCHEM)
-    databases = np.unique(ids_db_list[:, 1])
-    missing_db = [db for db in databases if db not in mapped_db and db != 'nan']   
-    # Totales por tipo:
-    logging.info(
-            f"\tLIPID MAPS: {len(lm_ids)} | "
-            f"UniProt: {len(uni_ids)} | "
-            f"PubChem: {len(pchem_cids)} | "
-            f"Databases that will not be mapped: {len(missing_db)} > " 
-            f"{', '.join(missing_db) if missing_db else 'N/A'}"
-        )
-    
     results = {}
     # Query LipidMaps DB (for LM ID)
     for query_id in lm_ids:
@@ -228,14 +215,19 @@ def integrate_crossrefs(ids_db_list):
 
     # Query UniProt DB
     for query_id in uni_ids:
-        if query_id not in results:
-            info = fetch_refseq_from_uniprot(query_id)
+        uids = (query_id).split(";")
+        refseq_results = []
+        for uid in uids:
+            info = fetch_refseq_from_uniprot(uid)
             if info:
-                results[query_id] = info
+                refseq_results.append(info.get("RefSeq_Id"))
             else:
-                logging.info(f"NO xrefs for {query_id}.")
-            # time.sleep(0.2)
-
+                refseq_results.append("NaN")
+        results[query_id] = {
+            "UniProt": query_id,
+            "RefSeq_Id": ";".join(refseq_results)
+        }
+    
     # Query PubChem for uncrossed numeric ids
     for query_id in pchem_cids:
         info = fetch_pubchem_info(query_id)
@@ -244,8 +236,7 @@ def integrate_crossrefs(ids_db_list):
         else:
             logging.info(f"NO xrefs for {query_id}.")
             # time.sleep(0.3)
-            
-    # df_results = pd.DataFrame([{"ID": k, **v} for k, v in results.items()])
+    
     df_results = pd.DataFrame.from_dict(results, orient="index")
     df_results.index.name = "ID"
     df_results = df_results.reset_index()
@@ -257,8 +248,8 @@ def integrate_crossrefs(ids_db_list):
 def merge_df_with_crossrefs(df, df_results, col_order):
     """Merge left, join original and API columns, and reorder columns."""
     m_df = pd.merge(df, df_results, on ="ID", how="left")
-    m_df = m_df.rename(columns={f'{col}_y': col for col in col_order 
-                        if f'{col}_y' in m_df.columns})
+    m_df = m_df.rename(columns={f"{col}_y": col for col in col_order 
+                        if f"{col}_y" in m_df.columns})
     # Order according to headers in the original tsv file
     outer_m_df = m_df[col_order]
     return outer_m_df
@@ -269,9 +260,9 @@ def merge_df_with_crossrefs(df, df_results, col_order):
 def read(input_file):
     # Read input + removing empty rows and columns (".dropna")
     df_all = (
-        pd.read_csv(input_file, sep='\t', encoding="cp1252")
-        .dropna(axis=0, how='all') # rows
-        # .dropna(axis=1, how='all') #columns
+        pd.read_csv(input_file, sep="\t", encoding="cp1252")
+        .dropna(axis=0, how="all") # rows
+        # .dropna(axis=1, how="all") #columns
     )
     return df_all
 
@@ -282,7 +273,7 @@ def save(base_filename, output_folder, final_df):
         os.makedirs(output_folder)
     base_filename_upd = base_filename.replace(".txt", "_updated.txt")
     output_path = os.path.join(output_folder,base_filename_upd)
-    final_df.to_csv(output_path, sep='\t')
+    final_df.to_csv(output_path, sep="\t")
     return output_path
 
 
@@ -300,8 +291,26 @@ def main(input_file, output_folder):
     col_order = extract_header(df_all)
     ids_db_list = extract_ids (df_all)
 
+    # Classify IDs
+    lm_ids,uni_ids,pchem_cids = classify_ids(ids_db_list)
+
+    # Extract DataBase totals and those which will not be mapped
+    mapped_db = set(LM) | set(UPROT) | set(PCHEM)
+    databases = np.unique(ids_db_list[:, 1])
+    logging.info(
+        f" LIPID MAPS: {len(lm_ids)} |"
+        f" UniProt: {len(uni_ids)} |"
+        f" PubChem: {len(pchem_cids)}"
+    )
+    missing_db = [db for db in databases if db not in mapped_db and db != "nan"]   
+    if missing_db:
+        logging.info(
+            f" [ALERT] Databases that will not be mapped: {len(missing_db)}" 
+            f" > {','.join(missing_db)}"
+        )
+
     # Integrate and merge results
-    df_results = integrate_crossrefs(ids_db_list)
+    df_results = integrate_crossrefs(lm_ids,uni_ids,pchem_cids)
     final_df = merge_df_with_crossrefs(df_all, df_results, col_order)
 
     # Guardar el df resultante en tsv
@@ -310,15 +319,15 @@ def main(input_file, output_folder):
     # Tiempo de ejecución y registro de la ejecución
     end = time.perf_counter()
     total_time.append(end - start)
-    logging.info(f"     Tiempo ejecución hoja: {end - start:.2f} s")
-    logging.info(f" ** Archivo guardado en: {output_path} **\n")
+    logging.info(f" Tiempo ejecución hoja: {end - start:.2f} s")
+    logging.info(f" Archivo guardado en:\n{output_folder}\n")
 
 
 ################################ ENTRY POINT ##########################################
 
 if __name__ == "__main__":
     tsv_files = [f for f in os.listdir(INPUT_FOLDER) 
-                 if f.endswith('.txt') or f.endswith('.tsv')]
+                 if f.endswith(".txt") or f.endswith(".tsv")]
     for file in tsv_files:
         INPUT_FILE = os.path.join(INPUT_FOLDER, file)
         main(INPUT_FILE, OUTPUT_FOLDER)
