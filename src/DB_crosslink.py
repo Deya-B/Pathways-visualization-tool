@@ -54,8 +54,6 @@ logging.basicConfig(
 PCHEM = ["pubchem cid", "pubchem"]
 LM = ["lipidmaps"]
 UPROT = ["uniprot"]
-# TODO: Columns
-# COL_ORDER = [header]
 
 # UniProt ID Pattern (verified according to official rules)
 UNIPROT_PATTERN = r"([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})"
@@ -176,6 +174,32 @@ def fetch_pubchem_info(query_id):
 
 ############################ CROSS-REFERENCE INTEGRATION ##############################
 
+def extract_header (df_all):
+    header_list = []
+    for col in df_all.columns:
+        if not col.startswith("Unnamed"): # remove Unnamed
+            header_list.append(col)
+    return header_list
+
+
+def extract_ids(df):
+    # Normalize info in DataBase column -> pass to string and convert to lowercase
+    df["DataBase"] = df["DataBase"].astype(str).str.strip().str.lower()
+
+    # Extract ID and DataBase columns
+    df_ids_db = df[["ID","DataBase"]]
+    ids_db_list = df_ids_db.to_numpy()
+
+    # Check for duplicate IDs
+    duplicated = df_ids_db["ID"].duplicated(keep=False)
+    repeated_ids = df_ids_db.loc[duplicated, "ID"].dropna().unique() # remove NaN
+    if len(repeated_ids) > 0:
+        logging.warning(
+            f"ALERT: The following IDs are repeated: "
+            f"{', '.join(map(str, repeated_ids))}")
+    return ids_db_list
+
+
 def integrate_crossrefs(ids_db_list):
     """Joins results from LipidMaps, PubChem and UniProt for all IDs."""
     # Classify IDs
@@ -230,9 +254,13 @@ def integrate_crossrefs(ids_db_list):
 
 ############################ MERGING DataFrame Results ###############################
 
-def merge_df_with_crossrefs(df, df_results):
-    """Update the DataFrame with the cross-references found."""
-    outer_m_df = pd.merge(df, df_results, on ="ID", how="left")
+def merge_df_with_crossrefs(df, df_results, col_order):
+    """Merge left, join original and API columns, and reorder columns."""
+    m_df = pd.merge(df, df_results, on ="ID", how="left")
+    m_df = m_df.rename(columns={f'{col}_y': col for col in col_order 
+                        if f'{col}_y' in m_df.columns})
+    # Order according to headers in the original tsv file
+    outer_m_df = m_df[col_order]
     return outer_m_df
 
 
@@ -242,29 +270,10 @@ def read(input_file):
     # Read input + removing empty rows and columns (".dropna")
     df_all = (
         pd.read_csv(input_file, sep='\t', encoding="cp1252")
-        .dropna(axis=0, how='all')
-        .dropna(axis=1, how='all')
+        .dropna(axis=0, how='all') # rows
+        # .dropna(axis=1, how='all') #columns
     )
     return df_all
-
-def extract_ids(df):
-    # Normalize info in DataBase column -> pass to string and convert to lowercase
-    df["DataBase"] = df["DataBase"].astype(str).str.strip().str.lower()
-
-    # Extract ID and DataBase columns
-    df_ids_db = df[["ID","DataBase"]]
-    ids_db_list = df_ids_db.to_numpy()
-
-    # Check for duplicate IDs
-    duplicated = df_ids_db["ID"].duplicated(keep=False)
-
-    repeated_ids = df_ids_db.loc[duplicated, "ID"].dropna().unique() # remove NaN
-    if len(repeated_ids) > 0:
-        logging.warning(
-            f"ALERT: The following IDs are repeated: "
-            f"{', '.join(map(str, repeated_ids))}")
-        
-    return ids_db_list
 
 
 def save(base_filename, output_folder, final_df):
@@ -288,11 +297,12 @@ def main(input_file, output_folder):
 
     # Read input
     df_all = read(input_file)
+    col_order = extract_header(df_all)
     ids_db_list = extract_ids (df_all)
 
     # Integrate and merge results
     df_results = integrate_crossrefs(ids_db_list)
-    final_df = merge_df_with_crossrefs(df_all, df_results)
+    final_df = merge_df_with_crossrefs(df_all, df_results, col_order)
 
     # Guardar el df resultante en tsv
     output_path = save(base_filename, output_folder, final_df)
