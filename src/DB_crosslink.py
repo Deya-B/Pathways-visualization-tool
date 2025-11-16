@@ -1,31 +1,32 @@
-#######################################################################################
-#                      LIPID MAPS/PubChem/UniProt REST APIs                           # 
-#######################################################################################
-# El siguiente código:
-    # 1. Lee el Excel con los ID"s de LIPID MAPS, PubChem y UniProt.
-    # 2. Filtra los IDs. 
-    # 3. 
-    #  a) Usa la API REST de LIPID MAPS® (https://www.lipidmaps.org/resources/rest) 
-    #       desde 2 different endpoints para obtener la InChI e InChIKey de
-    #       cada metabolito y las cross-refs de los IDs con KEGG, PubChem, HMDB y ChEBI
-    #       (metabolitos) y RefSeq_ID y UniProt en el caso de proteínas.
-    #  b) Usa las API REST de PubChem (https://pubchem.ncbi.nlm.nih.gov/docs/rdf-rest) 
-    #       para obtener, tanto los datos de la InChI e InChIKey de cada metabolito, 
-    #       como las cross-refs de los IDs con KEGG, HMDB y ChEBI
-    # 4. Genera una copia del Excel actualizado "_updated.xlsx".
-#######################################################################################
-
-
-########################################### MAIN ######################################
-# Estuctura:
-# main.py
-# ├── classify_ids()            # Separa LM, UniProt, y otros IDs
-# ├── fetch_lipidmaps_info()    # Busca información y cross-referencias de LIPID MAPS
-# ├── fetch_pubchem_info()      # Busca información y cross-referencias de PubChem
-# ├── fetch_refseq_from_uniprot() # Busca información y cross-referencias de UniProt
-# ├── integrate_crossrefs()     # Une resultados de LipidMaps, PubChem y UniProt
-# ├── update_excel()            # Escribe los resultados en el Excel
-# └── main()                    # Coordina todo
+##################################################################################
+#          Cross-referencing pipeline (LipidMaps / PubChem / UniProt)            # 
+##################################################################################
+# This script:
+    # 1. Reads TSV files with "ID" and "DataBase" columns.
+    # 2. Sorts the IDs according to their source: LipidMaps, UniProt, or PubChem.
+    # 3. Queryes the REST APIs of:
+        # • LipidMaps:
+                # KEGG, PubChem CID, HMDB, ChEBI, RefSeq_Id, UniProt, InChI, InChIKey
+        # • UniProt:
+                # Cross-refs RefSeq 
+                    # multiple accesses per UID; 
+                    # .1/.2 suffixes are removed
+        # • PubChem: 
+                # InChI, InChIKey, and cross-refs KEGG, HMDB, and ChEBI
+    # 4. Integrates the results into a single dataframe.
+    # 5. Merges the original dataframe with the new annotation columns.
+    # 6. Export the updated file with the suffix "_updated.txt".
+##################################################################################
+# Pipeline Architecture:
+# ├── fetch_lipidmaps_info()     # LipidMaps Query: metabolites and proteins
+# ├── fetch_refseq_from_uniprot()# UniProt Query: clean retrieval of RefSeq accessions
+# ├── fetch_pubchem_info()       # PubChem Query: InChI/InChIKey + cross-refs KEGG/HMDB/ChEBI
+# ├── classify_ids()             # Filter IDs by the database declared in the column
+# ├── integrate_crossrefs()      # Merge results from the three sources into a single dict/DF
+# ├── merge_df_with_crossrefs()  # Combine the original TSV with the new annotations
+# ├── read(), save()             # File input/output
+# └── main()                     # General file processing controller
+##################################################################################
 
 import os
 import pandas as pd
@@ -35,13 +36,12 @@ import time
 import logging
 import re
 
-############################# CONFIGURATION AND CONSTANTS #############################
-
+############################# CONFIGURATION AND CONSTANTS ########################
 # Folders
-# INPUT_FOLDER = "c:/Users/dborrotoa/Desktop/TFM/pathways_raw/"
 INPUT_FOLDER = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/pathways_raw"
-# OUTPUT_FOLDER = "c:/Users/dborrotoa/Desktop/TFM/pathways_updated/"
 OUTPUT_FOLDER = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/pathways_updated"
+# INPUT_FOLDER = "c:/Users/dborrotoa/Desktop/TFM/pathways_raw/"
+# OUTPUT_FOLDER = "c:/Users/dborrotoa/Desktop/TFM/pathways_updated/"
 
 # Logging configuration
 logging.basicConfig(
@@ -56,27 +56,21 @@ LM = ["lipidmaps"]
 UPROT = ["uniprot"]
 
 # UniProt ID Pattern (verified according to official rules)
-UNIPROT_PATTERN = r"([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})"
-    # Ref.: https://www.uniprot.org/help/accession_numbers
+     # Ref.: https://www.uniprot.org/help/accession_numbers
+UNIPROT_PATTERN = (r"([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z]"
+                    "[0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})")
+   
 
-
-############################## CLASSIFICATION FUNCTIONS ###############################
-
-def classify_ids(ids_db_list):
-    """Filtering the "ID" column per DataBase."""
-    # Extract ID"s (column 0) where DataBase is matching
-    lm_ids = ids_db_list[np.isin(ids_db_list[:, 1], LM), 0]
-    uni_ids =  ids_db_list[np.isin(ids_db_list[:, 1], UPROT), 0]
-    pchem_cids = ids_db_list[np.isin(ids_db_list[:, 1], PCHEM), 0]
-    return lm_ids,uni_ids,pchem_cids
-
-############################# FETCHERS (APIs) #########################################
+############################# FETCHERS (APIs) ####################################
 
 def fetch_lipidmaps_info(query_id):
-    """Search for information using LipidMaps/UniProt IDs in the LipidMaps REST API."""
+    """Search for information using LipidMaps/UniProt IDs in the LipidMaps 
+    REST API."""
     # Obtain context and identifier type segment for DataBase endpoint
-        # https://www.lipidmaps.org/rest/{context}/{input_item}/{input_value}/{output_item}
-    if query_id.startswith("LMP"):      # /{context}/{input_item}
+        # https://www.lipidmaps.org/rest/
+                    # {context}/{input_item}/ >> context and identifier type
+                    # {input_value}/{output_item}
+    if query_id.startswith("LMP"):      
         endpoint = "protein/lmp_id"     # for LM protein ID queries
     elif re.match(UNIPROT_PATTERN, query_id):
         endpoint = "protein/uniprot_id" # for UniProt protein ID queries
@@ -92,19 +86,16 @@ def fetch_lipidmaps_info(query_id):
         if isinstance(data, list) and not data:
             return None
         
-        # PROTEIN case: multiple rows in response(r), use only Row1
+        # PROTEIN case: multiple rows in response(r) > use only Row1
         if isinstance(data, dict) and any(k.startswith("Row") for k in data):
             first_row = data.get("Row1") or {}
             return {
-                # "LM_ID": first_row.get("lm_id") or first_row.get("lmp_id") or query_id,
                 "RefSeq_Id": first_row.get("refseq_id"),
                 "UniProt": first_row.get("uniprot_id")
             }
         # METABOLITE/PROTEIN case: flat dict in response
         elif isinstance(data, dict):
-            # lm_from_data = data.get("lm_id") or data.get("lmp_id") or None # extract LM id
             return {
-                # "LM_ID": lm_from_data if lm_from_data else (query_id if query_id.startswith("LM") else None),
                 "KEGG": data.get("kegg_id"),
                 "PubChem": data.get("pubchem_cid"),
                 "HMDB": data.get("hmdb_id"),
@@ -124,8 +115,7 @@ def fetch_lipidmaps_info(query_id):
 
 def fetch_refseq_from_uniprot(query_id):
     """Looking for cross-RefSeq access in the UniProt API."""
-    uniprot_ids = [x.strip() for x in str(query_id).split(";")] # rows with multiple IDs
-    # all_refseq = []
+    uniprot_ids = [x.strip() for x in str(query_id).split(";")] # rows with ID1;ID2
     for uid in uniprot_ids:
         try:
             url = f"https://rest.uniprot.org/uniprotkb/{uid}?format=json"
@@ -151,15 +141,22 @@ def fetch_pubchem_info(query_id):
     """Search for information by CID in the PubChem API.""" 
     try:    
         # Extract InChI and InChIKey
-        url_inchi = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{query_id}/property/InChI,InChIKey/JSON"
+        url_inchi = (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/"
+                     f"{query_id}/property/InChI,InChIKey/JSON")
         r_inchi = requests.get(url_inchi, timeout=10)
         r_inchi.raise_for_status()
-        data_inchi = r_inchi.json().get("PropertyTable", {}).get("Properties", [{}])[0]
+        data_inchi = (r_inchi.json()
+                      .get("PropertyTable", {})
+                      .get("Properties", [{}])[0])
         # Extract crossreferences (xrefs)
-        url_xrefs = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{query_id}/xrefs/RegistryID/JSON"
+        url_xrefs = (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/"
+                     f"{query_id}/xrefs/RegistryID/JSON")
         r_xrefs = requests.get(url_xrefs, timeout=10)
         r_xrefs.raise_for_status()
-        data_xrefs = r_xrefs.json().get("InformationList", {}).get("Information", [{}])[0].get("RegistryID", [])
+        data_xrefs = (r_xrefs.json()
+                        .get("InformationList", {})
+                        .get("Information", [{}])[0]
+                        .get("RegistryID", []))
         kegg_id = next((x for x in data_xrefs if re.fullmatch(r"C\d{5}", x)), None)
         chebi_id = next((x for x in data_xrefs if x.startswith("CHEBI:")), None)
         hmdb_id = next((x for x in data_xrefs if x.startswith("HMDB")), None)
@@ -175,7 +172,56 @@ def fetch_pubchem_info(query_id):
         logging.warning(f"PubChem no data for {query_id}: {e}")
         return None
 
-############################ CROSS-REFERENCE INTEGRATION ##############################
+
+############################ CROSS-REFERENCE INTEGRATION #########################
+
+def integrate_crossrefs(lm_ids,uni_ids,pchem_cids):
+    """Joins results from LipidMaps, PubChem and UniProt for all IDs."""
+    results = {}
+    # Query LipidMaps DB (for LM ID)
+    for query_id in lm_ids:
+        info = fetch_lipidmaps_info(query_id)
+        if not info:
+            continue
+        results[query_id] = info
+
+    # Query UniProt DB
+    for query_id in uni_ids:
+        uids = (query_id).split(";")
+        refseq_results = []
+
+        for uid in uids:
+            info = fetch_refseq_from_uniprot(uid)
+            refseq_raw = info.get("RefSeq_Id") if info else "NaN"
+            if refseq_raw == "NaN":
+                refseq_results.append("NaN")
+                continue
+            # Obtain RefSeq parts and remove sufixes
+            refseq_raw_parts = [p.strip() for p in refseq_raw.split(",") if p.strip()]
+            clean = [p.split(".")[0] for p in refseq_raw_parts]
+            refseq_results.append(",".join(clean))
+        # Save results
+        results[query_id] = {
+            "UniProt": query_id,
+            "RefSeq_Id": ";".join(refseq_results)
+        }
+    
+    # Query PubChem for uncrossed numeric ids
+    for query_id in pchem_cids:
+        info = fetch_pubchem_info(query_id)
+        if info:
+            results[query_id] = info
+        else:
+            logging.info(f"NO xrefs for {query_id}.")
+            # time.sleep(0.3)
+    
+    df_results = pd.DataFrame.from_dict(results, orient="index")
+    df_results.index.name = "ID"
+    df_results = df_results.reset_index()
+    return df_results
+
+
+############################# DF INFO EXTRACTION/MERGING #########################
 
 def extract_header (df_all):
     header_list = []
@@ -203,67 +249,35 @@ def extract_ids(df):
     return ids_db_list
 
 
-def integrate_crossrefs(lm_ids,uni_ids,pchem_cids):
-    """Joins results from LipidMaps, PubChem and UniProt for all IDs."""
-    results = {}
-    # Query LipidMaps DB (for LM ID)
-    for query_id in lm_ids:
-        info = fetch_lipidmaps_info(query_id)
-        if not info:
-            continue
-        results[query_id] = info
+def classify_ids(ids_db_list):
+    """Filtering the "ID" column per DataBase."""
+    # Extract ID"s (column 0) where DataBase is matching
+    lm_ids = ids_db_list[np.isin(ids_db_list[:, 1], LM), 0]
+    uni_ids =  ids_db_list[np.isin(ids_db_list[:, 1], UPROT), 0]
+    pchem_cids = ids_db_list[np.isin(ids_db_list[:, 1], PCHEM), 0]
+    return lm_ids,uni_ids,pchem_cids
 
-    # Query UniProt DB
-    for query_id in uni_ids:
-        uids = (query_id).split(";")
-        refseq_results = []
-        for uid in uids:
-            info = fetch_refseq_from_uniprot(uid)
-            if info:
-                refseq_results.append(info.get("RefSeq_Id"))
-            else:
-                refseq_results.append("NaN")
-        results[query_id] = {
-            "UniProt": query_id,
-            "RefSeq_Id": ";".join(refseq_results)
-        }
-    
-    # Query PubChem for uncrossed numeric ids
-    for query_id in pchem_cids:
-        info = fetch_pubchem_info(query_id)
-        if info:
-            results[query_id] = info
-        else:
-            logging.info(f"NO xrefs for {query_id}.")
-            # time.sleep(0.3)
-    
-    df_results = pd.DataFrame.from_dict(results, orient="index")
-    df_results.index.name = "ID"
-    df_results = df_results.reset_index()
-    return df_results
-
-
-############################ MERGING DataFrame Results ###############################
 
 def merge_df_with_crossrefs(df, df_results, col_order):
     """Merge left, join original and API columns, and reorder columns."""
     m_df = pd.merge(df, df_results, on ="ID", how="left")
-    m_df = m_df.rename(columns={f"{col}_y": col for col in col_order 
-                        if f"{col}_y" in m_df.columns})
+    m_df = m_df.rename(
+        columns={f"{col}_y": col for col in col_order 
+                        if f"{col}_y" in m_df.columns}
+                        )
     # Order according to headers in the original tsv file
     outer_m_df = m_df[col_order]
     return outer_m_df
 
 
-################################ READ/SAVE FILE #######################################
+################################ READ/SAVE FILE ##################################
 
 def read(input_file):
-    # Read input + removing empty rows and columns (".dropna")
+    # Read input + removing empty rows (".dropna")
     df_all = (
         pd.read_csv(input_file, sep="\t", encoding="cp1252")
-        .dropna(axis=0, how="all") # rows
-        # .dropna(axis=1, how="all") #columns
-    )
+        .dropna(axis=0, how="all")
+        )
     return df_all
 
 
@@ -273,11 +287,11 @@ def save(base_filename, output_folder, final_df):
         os.makedirs(output_folder)
     base_filename_upd = base_filename.replace(".txt", "_updated.txt")
     output_path = os.path.join(output_folder,base_filename_upd)
-    final_df.to_csv(output_path, sep="\t")
+    final_df.to_csv(output_path, sep="\t", index=False)
     return output_path
 
 
-############################## MAIN CONTROLADOR #######################################
+############################## MAIN CONTROLADOR ##################################
 
 def main(input_file, output_folder):
     total_time = []
@@ -304,7 +318,7 @@ def main(input_file, output_folder):
     )
     missing_db = [db for db in databases if db not in mapped_db and db != "nan"]   
     if missing_db:
-        logging.info(
+        logging.warning(
             f" [ALERT] Databases that will not be mapped: {len(missing_db)}" 
             f" > {','.join(missing_db)}"
         )
@@ -320,10 +334,10 @@ def main(input_file, output_folder):
     end = time.perf_counter()
     total_time.append(end - start)
     logging.info(f" Tiempo ejecución hoja: {end - start:.2f} s")
-    logging.info(f" Archivo guardado en:\n{output_folder}\n")
+    logging.info(f" Archivo guardado en:\n\t{output_folder}\n")
 
 
-################################ ENTRY POINT ##########################################
+################################ ENTRY POINT #####################################
 
 if __name__ == "__main__":
     tsv_files = [f for f in os.listdir(INPUT_FOLDER) 
