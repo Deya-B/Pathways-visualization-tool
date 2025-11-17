@@ -64,25 +64,16 @@ loglevel = args.log or config.get('loglevel', 'INFO')
 verbose = args.verbose or config.get('verbose', False)
 
 # Logging Setup
-
-# logging.basicConfig(
-#     level=logging.INFO, 
-#     format="%(levelname)s:%(message)s"
-#     # filename="log.txt"
-# )
-
 logging.basicConfig(
     level=getattr(logging, loglevel), 
     format="%(levelname)s:%(message)s")
 if verbose:
     logging.getLogger().setLevel(logging.DEBUG)
 
-
 # Global variables with accepted variants
 PCHEM = ["pubchem cid", "pubchem"]
 LM = ["lipidmaps"]
 UPROT = ["uniprot"]
-
 
 # UniProt ID Pattern (verified according to official rules)
      # Ref.: https://www.uniprot.org/help/accession_numbers
@@ -496,7 +487,7 @@ def main(input_file, output_folder):
     if missing_db:
         logging.warning(
             f"\n\t[ALERT]: Databases that will not be mapped: {len(missing_db)}" 
-            f" > {','.join(missing_db)}"
+            f" > {','.join(missing_db)}\n"
         )
 
     # Integrate and merge results

@@ -3,6 +3,7 @@ output_folder: c:/Users/dborrotoa/Desktop/TFM/pathways_updated
 loglevel: INFO
 verbose: false
 
+
 # FOLDERS
 # home
     # INPUT_FOLDER = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/pathways_raw"
