@@ -1,3 +1,4 @@
+# python DB_crosslink.py -c config.yaml
 ###############################################################################
 #        Cross-referencing pipeline (LipidMaps / PubChem / UniProt)           # 
 ###############################################################################
@@ -37,25 +38,51 @@ import requests
 import time
 import logging
 import re
+import argparse
+import yaml # pip install pyyaml
 
 ########################## CONFIGURATION AND CONSTANTS ########################
-# Logging configuration
-logging.basicConfig(
-    level=logging.INFO, 
-    format="%(levelname)s:%(message)s"
-    # filename="log.txt"
-)
+parser = argparse.ArgumentParser(description="Process pipeline arguments.")
+parser.add_argument("-i", "--input", help="Input folder with TSV files")
+parser.add_argument("-o", "--output", help="Output folder path")
+parser.add_argument("-c", "--config", help="YAML configuration file")
+parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
+parser.add_argument('-l', '--log', 
+                    choices=['DEBUG','INFO','WARNING','ERROR','CRITICAL'], 
+                    default='INFO', help="Log level")
+# Parse command line 
+args = parser.parse_args()
 
-# Folders
-INPUT_FOLDER = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/pathways_raw"
-OUTPUT_FOLDER = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/pathways_updated"
-# INPUT_FOLDER = "c:/Users/dborrotoa/Desktop/TFM/pathways_raw/"
-# OUTPUT_FOLDER = "c:/Users/dborrotoa/Desktop/TFM/pathways_updated/"
+config = {}
+if args.config:
+    with open(args.config) as f:
+        config = yaml.safe_load(f)
+
+input_folder = args.input or config.get("input_folder")
+output_folder = args.output or config.get("output_folder")
+loglevel = args.log or config.get('loglevel', 'INFO')
+verbose = args.verbose or config.get('verbose', False)
+
+# Logging Setup
+
+# logging.basicConfig(
+#     level=logging.INFO, 
+#     format="%(levelname)s:%(message)s"
+#     # filename="log.txt"
+# )
+
+logging.basicConfig(
+    level=getattr(logging, loglevel), 
+    format="%(levelname)s:%(message)s")
+if verbose:
+    logging.getLogger().setLevel(logging.DEBUG)
+
 
 # Global variables with accepted variants
 PCHEM = ["pubchem cid", "pubchem"]
 LM = ["lipidmaps"]
 UPROT = ["uniprot"]
+
 
 # UniProt ID Pattern (verified according to official rules)
      # Ref.: https://www.uniprot.org/help/accession_numbers
@@ -327,8 +354,8 @@ def extract_ids(df):
     repeated_ids = df_ids_db.loc[duplicated, "ID"].dropna().unique() # remove NaN
     if len(repeated_ids) > 0:
         logging.warning(
-            f"\n [ALERT]: The following IDs are duplicated:\n"
-            f"{','.join(map(str, repeated_ids))}\n")
+            f"\n\t[ALERT]: The following IDs are duplicated:"
+            f"\n\t{','.join(map(str, repeated_ids))}\n")
     return ids_db_list
 
 
@@ -468,7 +495,7 @@ def main(input_file, output_folder):
     missing_db = [db for db in databases if db not in mapped_db and db != "nan"]   
     if missing_db:
         logging.warning(
-            f" [ALERT] Databases that will not be mapped: {len(missing_db)}" 
+            f"\n\t[ALERT]: Databases that will not be mapped: {len(missing_db)}" 
             f" > {','.join(missing_db)}"
         )
 
@@ -489,6 +516,8 @@ def main(input_file, output_folder):
 ############################# ENTRY POINT #####################################
 
 if __name__ == "__main__":
+    INPUT_FOLDER = input_folder
+    OUTPUT_FOLDER = output_folder
     tsv_files = [f for f in os.listdir(INPUT_FOLDER) 
                  if f.endswith(".txt") or f.endswith(".tsv")]
     for file in tsv_files:
