@@ -74,7 +74,7 @@ if verbose:
 PCHEM = ["pubchem cid", "pubchem"]
 LM = ["lipidmaps"]
 UPROT = ["uniprot"]
-
+SUPPORTED_DBS = PCHEM+UPROT+['hmbd', 'chebi']
 # UniProt ID Pattern (verified according to official rules)
      # Ref.: https://www.uniprot.org/help/accession_numbers
 UNIPROT_PATTERN = (r"([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z]"
@@ -197,17 +197,20 @@ def fetch_pubchem_info(query_id):
         or the API response provides no useful data.
     """
     try:    
+        # server = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/"
         # Extract InChI and InChIKey
-        url_inchi = (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/"
-                     f"{query_id}/property/InChI,InChIKey/JSON")
+        url_inchi = (
+                f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/"
+                f"{query_id}/property/InChI,InChIKey/JSON")
         r_inchi = requests.get(url_inchi, timeout=10)
         r_inchi.raise_for_status()
         data_inchi = (r_inchi.json()
                       .get("PropertyTable", {})
                       .get("Properties", [{}])[0])
         # Extract crossreferences (xrefs)
-        url_xrefs = (f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/"
-                     f"{query_id}/xrefs/RegistryID/JSON")
+        url_xrefs = (
+                f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/"
+                f"{query_id}/xrefs/RegistryID/JSON")
         r_xrefs = requests.get(url_xrefs, timeout=10)
         r_xrefs.raise_for_status()
         data_xrefs = (r_xrefs.json()
@@ -217,11 +220,13 @@ def fetch_pubchem_info(query_id):
         kegg_id = next((x for x in data_xrefs if re.fullmatch(r"C\d{5}", x)), None)
         chebi_id = next((x for x in data_xrefs if x.startswith("CHEBI:")), None)
         hmdb_id = next((x for x in data_xrefs if x.startswith("HMDB")), None)
+        lm_id = next((x for x in data_xrefs if x.startswith("LM")), None)
         return {
             "PubChem": query_id,
+            "LipidMaps": lm_id,
             "KEGG": kegg_id,
             "HMDB": hmdb_id,
-            "ChEBI": chebi_id,
+            "ChEBI": chebi_id.split(":")[1],
             "InChI": data_inchi.get("InChI"),
             "InChIKey": data_inchi.get("InChIKey")
         }
@@ -320,7 +325,7 @@ def extract_header (df_all):
 
 
 def extract_ids(df):
-    """Extract ID-DataBase pairs and identify duplicated IDs.
+    """Extract ID-DataBase pairs.
 
     Parameters
     ----------
@@ -331,7 +336,6 @@ def extract_ids(df):
     -------
     ids_db_list : numpy.ndarray
         Array of shape (n, 2) containing ID and DataBase values.
-        Duplicated IDs are logged as warnings.
     """
     # Normalize info in DataBase column -> pass to string and convert to lowercase
     df["DataBase"] = df["DataBase"].astype(str).str.strip().str.lower()
@@ -339,14 +343,6 @@ def extract_ids(df):
     # Extract ID and DataBase columns
     df_ids_db = df[["ID","DataBase"]]
     ids_db_list = df_ids_db.to_numpy()
-
-    # Check for duplicate IDs
-    duplicated = df_ids_db["ID"].duplicated(keep=False)
-    repeated_ids = df_ids_db.loc[duplicated, "ID"].dropna().unique() # remove NaN
-    if len(repeated_ids) > 0:
-        logging.warning(
-            f"\n\t[ALERT]: The following IDs are duplicated:"
-            f"\n\t{','.join(map(str, repeated_ids))}\n")
     return ids_db_list
 
 
@@ -374,7 +370,7 @@ def classify_ids(ids_db_list):
     return lm_ids,uni_ids,pchem_cids
 
 
-def merge_df_with_crossrefs(df, df_results):
+def merge_df_with_crossrefs(df, df_results, col_order):
     """Join the original DataFrame with external annotation fields.
 
     Parameters
@@ -383,6 +379,8 @@ def merge_df_with_crossrefs(df, df_results):
         Input table loaded from TSV file.
     df_results : pandas.DataFrame
         Mapping from ID to extracted annotation records.
+    col_order: list
+        Header of the input TSV file.
 
     Returns
     -------
@@ -390,7 +388,6 @@ def merge_df_with_crossrefs(df, df_results):
         DataFrame containing the original columns order with annotated 
         fields.
     """
-    col_order = extract_header(df)
     m_df = pd.merge(df, df_results, on ="ID", how="left")
     m_df = m_df.rename(
         columns={f"{col}_y": col for col in col_order 
@@ -400,6 +397,30 @@ def merge_df_with_crossrefs(df, df_results):
     output_m_df = m_df[col_order]
     return output_m_df
 
+
+def duplicated_ids_check(df):
+    """Detect duplicates across database ID columns (PubChem, HMDB, ChEBI).
+    Duplicated IDs are logged as warnings.
+    
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Input DataFrame with cross-referenced data.
+    """
+    # Identify relevant DB columns from header
+    databases = [col for col in df.columns if col.lower() in SUPPORTED_DBS]
+    # Check duplicates across those columns
+    duplicated = df.duplicated(subset=databases, keep=False)
+    # Extract duplicated IDs
+    repeated_ids = df.loc[duplicated, "ID"].dropna().unique() 
+    if len(repeated_ids) > 0:
+        logging.warning(
+            f"\n\t[ALERT]: The following IDs are duplicated:"
+            f"\n\t{', '.join(map(str, repeated_ids))}"
+            f"\n\CHECK them out carefully.\n")
+# TODO: [ALERT]: The following IDs are duplicated:
+#       LMST04030166, LMST04030081, LMST04010032, 10133  
+#   Fix this so we get only one for repeated ID's like LMST04010032-10133
 
 ############################# READ/SAVE FILE ##################################
 
@@ -470,6 +491,7 @@ def main(input_file, output_folder):
 
     # Read input
     df_all = read(input_file)
+    header = extract_header(df_all)
     ids_db_list = extract_ids (df_all)
 
     # Classify IDs
@@ -492,9 +514,10 @@ def main(input_file, output_folder):
 
     # Integrate and merge results
     df_results = integrate_crossrefs(lm_ids, uni_ids, pchem_cids)
-    final_df = merge_df_with_crossrefs(df_all, df_results)
+    final_df = merge_df_with_crossrefs(df_all, df_results, header)
 
-    # Guardar el df resultante en tsv
+    # Check duplicated ids + Saving final df to tsv
+    duplicated_ids_check(final_df)
     save(base_filename, output_folder, final_df)
 
     # Tiempo de ejecución y registro de la ejecución
@@ -505,6 +528,11 @@ def main(input_file, output_folder):
 
 
 ############################# ENTRY POINT #####################################
+
+input_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_raw"
+output_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_updated"
+loglevel = "INFO"
+
 
 if __name__ == "__main__":
     INPUT_FOLDER = input_folder
