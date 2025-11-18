@@ -192,9 +192,9 @@ def fetch_pubchem_info(query_id):
     Returns
     -------
     info : dict
-        Dictionary containing KEGG, HMDB, ChEBI, InChI, and InChIKey
-        extracted from PubChem. Returns None when the CID is invalid
-        or the API response provides no useful data.
+        Dictionary containing LipidMaps, KEGG, HMDB, ChEBI, InChI, and 
+        InChIKey extracted from PubChem. Returns None when the CID is 
+        invalid or the API response provides no useful data.
     """
     try:    
         # server = f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/"
@@ -528,11 +528,6 @@ def main(input_file, output_folder):
 
 
 ############################# ENTRY POINT #####################################
-
-input_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_raw"
-output_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_updated"
-loglevel = "INFO"
-
 
 if __name__ == "__main__":
     INPUT_FOLDER = input_folder
