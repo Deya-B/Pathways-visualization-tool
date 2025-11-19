@@ -45,7 +45,7 @@ import yaml # pip install pyyaml
 parser = argparse.ArgumentParser(description="Process pipeline arguments.")
 parser.add_argument("-i", "--input", help="Input folder with TSV files")
 parser.add_argument("-o", "--output", help="Output folder path")
-parser.add_argument("-c", "--config", help="YAML configuration file")
+parser.add_argument("-c", "--config", required=True, help="YAML configuration file")
 parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
 parser.add_argument('-l', '--log', 
                     choices=['DEBUG','INFO','WARNING','ERROR','CRITICAL'], 
@@ -463,7 +463,7 @@ def save(base_filename, output_folder, final_df):
     """
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
-    base_filename_upd = base_filename.replace(".txt", "_updated.txt")
+    base_filename_upd = base_filename.replace(".tsv", "_updated.tsv")
     output_path = os.path.join(output_folder,base_filename_upd)
     final_df.to_csv(output_path, sep="\t", index=False)
     return None
@@ -533,7 +533,7 @@ if __name__ == "__main__":
     INPUT_FOLDER = input_folder
     OUTPUT_FOLDER = output_folder
     tsv_files = [f for f in os.listdir(INPUT_FOLDER) 
-                 if f.endswith(".txt") or f.endswith(".tsv")]
+                 if f.endswith(".tsv")]
     for file in tsv_files:
         INPUT_FILE = os.path.join(INPUT_FOLDER, file)
         main(INPUT_FILE, OUTPUT_FOLDER)
