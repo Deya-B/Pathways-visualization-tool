@@ -125,8 +125,3 @@ The script generates this `example_updated.txt`:
 | UniProt   | `https://rest.uniprot.org/uniprotkb/{id}?format=json` |
 | PubChem   | `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{id}/property/InChI,InChIKey/JSON`|
 |           | `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{id}/xrefs/RegistryID/JSON`|
-
-
-## 7. License
-
-MIT License.
