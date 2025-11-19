@@ -45,7 +45,7 @@ import yaml # pip install pyyaml
 parser = argparse.ArgumentParser(description="Process pipeline arguments.")
 parser.add_argument("-i", "--input", help="Input folder with TSV files")
 parser.add_argument("-o", "--output", help="Output folder path")
-parser.add_argument("-c", "--config", required=True, help="YAML configuration file")
+parser.add_argument("-c", "--config", required=False, help="YAML configuration file")
 parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
 parser.add_argument('-l', '--log', 
                     choices=['DEBUG','INFO','WARNING','ERROR','CRITICAL'], 
@@ -409,18 +409,23 @@ def duplicated_ids_check(df):
     """
     # Identify relevant DB columns from header
     databases = [col for col in df.columns if col.lower() in SUPPORTED_DBS]
+    # keep rows where at least one DB column has a value
+    df_valid = df[df[databases].notna().any(axis=1)]
     # Check duplicates across those columns
-    duplicated = df.duplicated(subset=databases, keep=False)
-    # Extract duplicated IDs
-    repeated_ids = df.loc[duplicated, "ID"].dropna().unique() 
-    if len(repeated_ids) > 0:
+    mask = df_valid.duplicated(subset=databases, keep=False)
+    dup_df = df_valid[mask]
+    # Extract duplicated IDs grouped per duplicate blocks
+    grouped = (
+        dup_df.groupby(databases)["ID"]
+        .apply(list)              # list of IDs in each duplicate cluster
+        .apply(lambda ids: "-".join(map(str, ids)))  # collapse IDs
+    )
+    # log output
+    for merged_ids in grouped:
         logging.warning(
-            f"\n\t[ALERT]: The following IDs are duplicated:"
-            f"\n\t{', '.join(map(str, repeated_ids))}"
-            f"\n\CHECK them out carefully.\n")
-# TODO: [ALERT]: The following IDs are duplicated:
-#       LMST04030166, LMST04030081, LMST04010032, 10133  
-#   Fix this so we get only one for repeated ID's like LMST04010032-10133
+            f"\n\t[ALERT]: Duplicated ID's present: [{merged_ids}]\n"
+        )
+
 
 ############################# READ/SAVE FILE ##################################
 
@@ -528,6 +533,9 @@ def main(input_file, output_folder):
 
 
 ############################# ENTRY POINT #####################################
+input_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_raw"
+output_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_updated"
+loglevel = "INFO"
 
 if __name__ == "__main__":
     INPUT_FOLDER = input_folder
