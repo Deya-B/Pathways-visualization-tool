@@ -81,6 +81,9 @@ UNIPROT_PATTERN = (r"([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z]"
                     "[0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})")
    
 ############################ FETCHERS (APIs) ##################################
+def safe_get(d, key):
+    v = d.get(key)
+    return v if isinstance(v, str) else None
 
 def fetch_lipidmaps_info(query_id):
     """Retrieve annotation records from the LipidMaps REST API.
@@ -226,7 +229,7 @@ def fetch_pubchem_info(query_id):
             "LipidMaps": lm_id,
             "KEGG": kegg_id,
             "HMDB": hmdb_id,
-            "ChEBI": chebi_id.split(":")[1],
+            "ChEBI": chebi_id.split(":")[1] if chebi_id else None,
             "InChI": data_inchi.get("InChI"),
             "InChIKey": data_inchi.get("InChIKey")
         }
