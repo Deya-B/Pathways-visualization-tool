@@ -39,36 +39,25 @@ import time
 import logging
 import re
 import argparse
-import yaml # pip install pyyaml
 
 ########################## CONFIGURATION AND CONSTANTS ########################
 parser = argparse.ArgumentParser(description="Process pipeline arguments.")
 parser.add_argument("-i", "--input", help="Input folder with TSV files")
 parser.add_argument("-o", "--output", help="Output folder path")
-parser.add_argument("-c", "--config", required=False, help="YAML configuration file")
-parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
 parser.add_argument('-l', '--log', 
                     choices=['DEBUG','INFO','WARNING','ERROR','CRITICAL'], 
                     default='INFO', help="Log level")
 # Parse command line 
 args = parser.parse_args()
 
-config = {}
-if args.config:
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
-
-input_folder = args.input or config.get("input_folder")
-output_folder = args.output or config.get("output_folder")
-loglevel = args.log or config.get('loglevel', 'INFO')
-verbose = args.verbose or config.get('verbose', False)
+input_folder = args.input
+output_folder = args.output
+loglevel = args.log
 
 # Logging Setup
 logging.basicConfig(
     level=getattr(logging, loglevel), 
     format="%(levelname)s:%(message)s")
-if verbose:
-    logging.getLogger().setLevel(logging.DEBUG)
 
 # Global variables with accepted variants
 PCHEM = ["pubchem cid", "pubchem"]
@@ -446,7 +435,7 @@ def read(input_file):
         Parsed DataFrame with empty rows removed.
     """
     df_all = (
-        pd.read_csv(input_file, sep="\t", encoding="cp1252")
+        pd.read_csv(input_file, sep="\t", encoding="utf_8")
         .dropna(axis=0, how="all")
         )
     return df_all
@@ -536,9 +525,6 @@ def main(input_file, output_folder):
 
 
 ############################# ENTRY POINT #####################################
-input_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_raw"
-output_folder = "c:/Users/dborrotoa/Desktop/TFM/pathways_updated"
-loglevel = "INFO"
 
 if __name__ == "__main__":
     INPUT_FOLDER = input_folder
