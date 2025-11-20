@@ -96,21 +96,22 @@ pip install pandas numpy pyyaml requests
 
 If our input file `example.txt` is as follows:
 
-| ID | DataBase | Common_Name | Synonyms | KEGG | PubChem | HMDB | ChEBI | InChIKey | InChI | Comments |
-|---|---|---|---|---|---|---|---|---|---|---|
-| LMST01010001 | LipidMaps | Cholesterol |  |  |  |  |  |  |  |  | 
-| LMST04010032 | LipidMaps | Chenodeoxycholic acid | CDCA |  |  |  |  |  |  |  | 
-| ... |  |  |  |  |  |  |  |  |  |  |
+| ID | DataBase | Common_Name | Synonyms | KEGG | PubChem | HMDB | ChEBI | InChIKey| Comments |
+|---|---|---|---|---|---|---|---|---|---|
+| LMST01010001 | LipidMaps | Cholesterol |  |  |  |  |  |  | example 1 |
+| LMST04010032 | LipidMaps | Chenodeoxycholic acid | CDCA |  |  |  |  |  | example 2 |
+| ... |  |  |  |  |  |  |  |  | example $n$ |
 
 **Output example**
 
 The script generates this `example_updated.txt`:
 
-| ID | DataBase | Common_Name | Synonyms | KEGG | PubChem | HMDB | ChEBI | InChIKey | Comments | InChIKey | InChI | Comments |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| LMST01010001 | LipidMaps | Cholesterol |  | C00187 | 5997 | HMDB0000067 | 16113 | HVYWMOMLDIMFJA-DPAQBDIFSA-N |  |  |  |  |
-| LMST04010032 | LipidMaps | Chenodeoxycholic acid | CDCA | C02528 | 10133 | HMDB0000518 | 16755 | RUDATBOHQWOJDD-BSWAIDMHSA-N |  |  |  |  |
-| ... |  |  |  |  |  |  |  |  |  |  |  |  |
+
+| ID | DataBase | Common_Name | Synonyms | KEGG | PubChem | HMDB | ChEBI | InChIKey | Comments | 
+|---|---|---|---|---|---|---|---|---|---|
+| LMST01010001 | LipidMaps | Cholesterol |  | C00187 | 5997 | HMDB0000067 | 16113 | HVYWMOMLDIMFJA-DPAQBDIFSA-N | example 1 |
+| LMST04010032 | LipidMaps | Chenodeoxycholic acid | CDCA | C02528 | 10133 | HMDB0000518 | 16755 | RUDATBOHQWOJDD-BSWAIDMHSA-N | example 2 |
+| ... |  |  |  |  |  |  |  |  | example $n$  |
 
 ### Endpoints used for each API:
 
