@@ -1,78 +1,74 @@
-# Cross‑referencing Pipeline (LipidMaps / PubChem / UniProt)
+# Source code overview
 
-This repository contains a Python script (`DB_crosslink.py`) that annotates metabolite and protein identifiers (IDs) from **LipidMaps**, **UniProt**, and **PubChem**.It reads TSV files, queries public REST APIs, merges the retrieved annotations, and outputs updated files.
+This folder contains the main Python pipelines used in the project:
 
-The annotations retrieved for **metabolites** are the *InChI* and *InChIKey* together with the cross-references of IDs with other important metabolite databases: *KEGG*, *PubChem*, *HMDB* and *ChEBI*.\
-On the other hand for proteins the RefSeq accession number and UniProt ID are obtained.\
+- `DB_crosslink.py`: cross‑referencing pipeline for metabolite and protein identifiers.
+- `to_gpml.py`: prototype converter from tabular pathway descriptions to GPML.
 
-Pipeline steps:
-1. Read input files.
-2. Extract ID/DataBase pairs.
-3. Classify IDs → LipidMaps / UniProt / PubChem.
-4. Query APIs.
-5. Merge annotations.
-6. Check duplicated cross-references.
-7. Write output file.
+---
 
-## 1. Requirements
+## Cross‑referencing Pipeline (`DB_crosslink.py`)
 
-Dependencies required: pandas, numpy, pyyaml and requests
+`DB_crosslink.py` annotates metabolite and protein identifiers from **LipidMaps**, **UniProt**, and **PubChem**, and adds cross‑references to several metabolite databases plus RefSeq accessions for proteins.
 
-```bash
-pip install pandas numpy pyyaml requests
-```
+### What it does
 
-## 2. File Structure
+- Reads one or more tab‑separated files (`.tsv` / `.txt`) from an input folder.
+- Extracts `ID` / `DataBase` pairs and classifies them into:
+  - LIPID MAPS (metabolites or proteins),
+  - UniProt accessions,
+  - PubChem CIDs.
+- Queries public REST APIs:
+  - LIPID MAPS REST service for metabolite and protein records (KEGG, PubChem CID, HMDB, ChEBI, RefSeq, UniProt, InChI, InChIKey).
+  - UniProt REST API for RefSeq cross‑references.
+  - PubChem PUG REST API for InChI / InChIKey and external IDs (LIPID MAPS, KEGG, HMDB, ChEBI) via Registry IDs.
+- Merges the retrieved annotations back into the original table, preserving the input column order.
+- Checks for duplicated identifiers across key ID columns (PubChem, HMDB, ChEBI, UniProt) and logs warnings.
+- Writes updated files to an output folder with the suffix `_updated.tsv`.
 
-Input files must be tab‑separated (`.txt` or `.tsv`) and contain at least:
-- ID: Annotation can be performed with IDs from LipidMaps or PubChem in the case of metabolites and LipidMaps or UniProt in the case of proteins/enzymes. Multiple UniProt IDs can be provided in a single cell separated by ";". `Example: P12345;Q8ABC1`. The pipeline will retrieve RefSeq accessions for each ID independently and concatenate the results using ";" between groups and "," inside each group.
-- DataBase for the given ID. Accepted DataBases in column:
-  - LipidMaps
-  - PubChem
-  - UniProt
+### Input format
 
-| ID           | DataBase  | xref-DB1 |  xref-DB2 |  ... | InChIKey| InChI|
-| ------------ | --------- | --- | --- | --- | --- | --- |
-| LMFA01010001 | LipidMaps |||...|||
-| P12345       | UniProt   |||...|||
-| 1234         | PubChem   |||...|||
+- Tab‑separated file (`.tsv` / `.txt`).
+<!-- , encoded in cp1252. -->
+- Required columns:
+  - `ID`:  
+    - Metabolites: LIPID MAPS ID or PubChem CID.  
+    - Proteins/enzymes: LIPID MAPS protein ID or UniProt accession.  
+    - Multiple UniProt IDs can be separated by `;` in one cell (e.g. `P12345;Q8ABC1`).
+  - `DataBase`, one of:
+    - `LipidMaps`
+    - `PubChem`
+    - `UniProt`.
 
-- No more data needs to be entered as input. However, it is possible to enter as many columns of information as you require for your data (such as Systematic Name, Synonyms...).
-- It is **important** however, that you provide the **name to the columns** for the annotations you wish to obtain.
-- The annotations that can be included are:
-  - Databases from which to obtain cross-references (xref-DBs) include:
-    - LipidMaps, KEGG, PubChem CID, HMDB, ChEBI for metabolites 
-    - RefSeq accessions for enzymes
-  - InChIKey and InChI
+- Additional columns (e.g. `Common_Name`, `Synonyms`, comments) are allowed and will be kept untouched.
+- To receive specific annotations, include appropriately named empty columns, e.g.:
+  - `KEGG`, `PubChem`, `HMDB`, `ChEBI` (xref DBs),
+  - `InChIKey`, `InChI`,
+  - `RefSeq` (for protein RefSeq accessions).
 
-*Example below.*
+### Typical workflow
 
-## 3. Running the Script
-
-### 3.1 Run using a configuration file: 
-
-#### YAML Configuration Example
-By creating a simple `config.yaml` with the following information:
-```yaml
-input_folder: ./relative/input/folder/path
-output_folder: c:/User/absolute/output/folder/path
-verbose: false
-loglevel: "INFO"
-```
-Then open the terminal, go to the folder where the script and `.yaml` is found, and run:
-```bash
-python DB_crosslink.py -c config.yaml
-```
-
-### 3.2 Run by providing paths manually:
-
-```bash
-python DB_crosslink.py \
-  -i path/to/input_folder \
-  -o path/to/output_folder \
-  -v \
-  -l INFO
-```
+1. **Prepare input tables** with `ID` and `DataBase` plus any extra columns you want to populate.
+2. **Configure input/output folders** via:
+   - a YAML config file, or
+   - CLI arguments if `--config` is not required.
+3. **Run the script**:
+   - With config file:
+     ```
+     python DB_crosslink.py -c config.yaml
+     ```
+   - With manual paths:
+     ```
+     python DB_crosslink.py \
+       -i path/to/input_folder \
+       -o path/to/output_folder \
+       -v \
+       -l INFO
+     ```
+4. **Inspect logs** for:
+   - unmapped databases,
+   - duplicated IDs across annotation columns,
+   - API timeouts or missing records.
 
 #### CLI Options
 
@@ -84,10 +80,19 @@ python DB_crosslink.py \
 | `-v` / `--verbose` | Verbose debugging mode                   |
 | `-l` / `--log`     | Logging level (DEBUG/INFO/WARNING/ERROR) |
 
+### Dependencies
 
-## 4. Input / Output
+- Python 3.9+
+- `pandas`, `numpy`, `pyyaml`, `requests`.
 
-### 4.1 Input example
+Install via:
+```bash
+pip install pandas numpy pyyaml requests
+```
+
+### Input/Output examples:
+
+**Input example**
 
 If our input file `example.txt` is as follows:
 
@@ -97,7 +102,7 @@ If our input file `example.txt` is as follows:
 | LMST04010032 | LipidMaps | Chenodeoxycholic acid | CDCA |  |  |  |  |  |  |  | 
 | ... |  |  |  |  |  |  |  |  |  |  |
 
-### 4.2 Output example
+**Output example**
 
 The script generates this `example_updated.txt`:
 
@@ -107,15 +112,7 @@ The script generates this `example_updated.txt`:
 | LMST04010032 | LipidMaps | Chenodeoxycholic acid | CDCA | C02528 | 10133 | HMDB0000518 | 16755 | RUDATBOHQWOJDD-BSWAIDMHSA-N |  |  |  |  |
 | ... |  |  |  |  |  |  |  |  |  |  |  |  |
 
-
-## 5. Notes
-
-* The pipeline checks for duplicated identifiers across key annotation columns (PubChem, HMDB, ChEBI, UniProt). When duplicates occur, a warning is printed.
-* UniProt RefSeq version numbers (`.1`, `.2`, …) are removed.
-* Multi‑entries for UniProt IDs written as `ID1;ID2` are processed individually and rejoined.
-* Note: Large batches may trigger API rate-limits. The script does not implement automatic backoff. If needed, introduce delays in the API section.
-
-## 6. Endpoints used for each API:
+### Endpoints used for each API:
 
 | DB        | Endpoint used                                         |
 | --------- | ----------------------------------------------------- |
@@ -125,3 +122,66 @@ The script generates this `example_updated.txt`:
 | UniProt   | `https://rest.uniprot.org/uniprotkb/{id}?format=json` |
 | PubChem   | `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{id}/property/InChI,InChIKey/JSON`|
 |           | `https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{id}/xrefs/RegistryID/JSON`|
+
+
+---
+
+## GPML converter prototype (`to_gpml.py`)
+
+`to_gpml.py` is a **work‑in‑progress** prototype that converts a CSV description of a pathway into a **GPML** file that can be opened and edited in **PathVisio** and potentially uploaded to **WikiPathways**.
+
+### Current capabilities
+
+- Parse a CSV file listing:
+  - metabolites and products as nodes,
+  - enzymes as separate nodes,
+  - reactions / conversions (substrate → product),
+  - catalytic relationships (enzyme catalyzes conversion).
+- Build an internal pathway graph:
+  - `Node` objects for metabolites and enzymes, with labels and database xrefs.
+  - `Interaction` objects for:
+    - **Conversion** edges (substrate → product),
+    - **Catalysis** edges (enzyme → reaction anchor).
+- Apply an automatic layout:
+  - BFS‑style layering for metabolite/product nodes.
+  - Placement of enzymes near the anchor point(s) of the reactions they catalyze.
+  - Computation of a GPML “board” size based on node positions.
+- Export a GPML 2013a‑style XML file with:
+  - `DataNode` elements for metabolites and enzymes.
+  - `Interaction` elements for conversions and catalysis, including anchors.
+  - Basic node sizes, fonts, and colors.
+
+### Expected input
+
+- A CSV file (default delimiter `\t`; the parser can be configured) containing at least:
+  - Node labels (metabolites, products, enzymes).
+  - Columns describing reaction source, target, and catalytic enzymes (exact column names depend on the current prototype and may still change).  
+- Example input tables are provided under `examples/data/`.
+
+### Usage example
+
+Minimal example (hard‑coded in the prototype at the moment):
+
+```bash
+python to_gpml.py
+```
+
+This will:
+
+- Read an example CSV such as `examples/data/rutamedia.tsv` (path currently set in the script).
+- Build a `Pathway` object.
+- Run the internal layout.
+- Save a `.gpml` file that can be opened in PathVisio.
+
+Open the resulting GPML in **PathVisio** and refine the layout or annotations there as needed.
+
+### Status and roadmap
+
+- Status: **prototype**, not yet a stable library.
+- Known limitations:
+  - CSV schema is still evolving.
+  - Limited support for compartments, complexes, and advanced GPML features.
+- Planned improvements:
+  - Stable CLI entry point (input CSV, title, organism, output path).
+  - More flexible parsing of column names for metabolites/enzymes/reactions.
+  - Better layout heuristics and optional manual overrides.
