@@ -48,21 +48,9 @@ This folder contains the main Python pipelines used in the project:
 ### Typical workflow
 
 1. **Prepare input tables** with `ID` and `DataBase` plus any extra columns you want to populate.
-2. **Configure input/output folders** via:
-   - a YAML config file, or
-   - CLI arguments if `--config` is not required.
-3. **Run the script**:
-   - With config file:
+2. **Run the script**:
      ```
-     python DB_crosslink.py -c config.yaml
-     ```
-   - With manual paths:
-     ```
-     python DB_crosslink.py \
-       -i path/to/input_folder \
-       -o path/to/output_folder \
-       -v \
-       -l INFO
+     python DB_crosslink.py -i path/to/input_folder -o path/to/output_folder
      ```
 4. **Inspect logs** for:
    - unmapped databases,
@@ -75,18 +63,15 @@ This folder contains the main Python pipelines used in the project:
 | ------------------ | ---------------------------------------- |
 | `-i` / `--input`   | Folder containing input TSV/TXT files    |
 | `-o` / `--output`  | Output directory for updated files       |
-| `-c` / `--config`  | YAML configuration file                  |
-| `-v` / `--verbose` | Verbose debugging mode                   |
-| `-l` / `--log`     | Logging level (DEBUG/INFO/WARNING/ERROR) |
-
+| `-l` / `--log`     | Logging level (DEBUG/INFO/WARNING/ERROR).<br>Set to INFO by default, DEBUG can be requested with<br>`-l DEBUGG` to obtain more information.|
 ### Dependencies
 
 - Python 3.9+
-- `pandas`, `numpy`, `pyyaml`, `requests`.
+- `pandas`, `numpy`, `requests`.
 
 Install via:
 ```bash
-pip install pandas numpy pyyaml requests
+pip install pandas numpy requests
 ```
 
 ### Input/Output examples:
