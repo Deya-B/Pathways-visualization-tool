@@ -45,7 +45,7 @@ import yaml # pip install pyyaml
 parser = argparse.ArgumentParser(description="Process pipeline arguments.")
 parser.add_argument("-i", "--input", help="Input folder with TSV files")
 parser.add_argument("-o", "--output", help="Output folder path")
-parser.add_argument("-c", "--config", required=False, help="YAML configuration file")
+parser.add_argument("-c", "--config", required=True, help="YAML configuration file")
 parser.add_argument("-v", "--verbose", action='store_true', help="Verbose mode")
 parser.add_argument('-l', '--log', 
                     choices=['DEBUG','INFO','WARNING','ERROR','CRITICAL'], 
@@ -447,6 +447,7 @@ def read(input_file):
     """
     df_all = (
         pd.read_csv(input_file, sep="\t", encoding="cp1252")
+        # TODO: probar si funciona poniendo un archivo con encoding UTF-8
         .dropna(axis=0, how="all")
         )
     return df_all
