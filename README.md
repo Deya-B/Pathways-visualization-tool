@@ -1,23 +1,32 @@
 # Pathways-visualization-tool
 
-**WIP (prototype).**
+Python workflows to support a metabolomics pathway project focused on bile acids and cardiovascular disease.\
+The repository currently includes:
 
-Converts tabular pathway specs (CSV) into **GPML** so they can be opened/saved in **PathVisio/WikiPathways**. Current goal: generate GPML with correct DataNodes (metabolites/enzymes) and Interactions (conversion/catalysis) with basic layout.
+- A cross‑referencing pipeline to harmonize metabolite and protein identifiers across major databases (LIPID MAPS, PubChem, UniProt and others).  
+- A prototype converter from tabular pathway descriptions (CSV/TSV) into GPML, the XML format used by PathVisio and WikiPathways for pathway visualization and sharing.
 
-> Status: under active development. APIs, file names, and outputs may change.
+These components are being developed as part of a Master’s thesis on the visualization and programmatic querying of metabolomic pathways.
 
-## What it does (today)
-- Parse a CSV describing metabolites/enzymes/interactions.
-- Emit a `.gpml` file that opens in PathVisio.
-- Include simple positioning & sizes for nodes; node positioning is being refined.
+## Project goals
 
-## Repo layout
+- Make manually reconstructed bile acid pathways machine‑readable and reusable.
+- Provide a reproducible workflow to:
+  - Clean and annotate metabolite/protein IDs via public REST APIs.
+  - Convert curated pathway tables into GPML for visualization in PathVisio and potential upload to WikiPathways.
+- Enable later integration with multi‑omics tools (e.g. TurbOmics) for pathway‑level analysis of metabolomics data.
+
+## Repository structure
+
 ```
-src/ # library / main script
-  to_gpml.py # current implementation (work in progress)
-examples/
-  data/ # example CSV inputs used for tests/demos
-  gpml/ # GPML outputs generated from those CSVs
-LICENSE
-README.md
+├── src/
+│ ├── DB_crosslink.py # Cross‑referencing pipeline for metabolite & protein IDs
+│ └── to_gpml.py # CSV → GPML prototype for pathway visualization
+├── examples/
+│ ├── data/ # Example input tables (metabolites, enzymes, reactions)
+│ └── gpml/ # GPML outputs generated with the prototype
+├── LICENSE
+└── README.md
 ```
+
+The code is a work in progress; interfaces and file formats may change as the thesis evolves.
