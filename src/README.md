@@ -28,8 +28,7 @@ This folder contains the main Python pipelines used in the project:
 
 ### Input format
 
-- Tab‑separated file (`.tsv` / `.txt`).
-<!-- , encoded in cp1252. -->
+- Tab‑separated file (`.tsv` / `.txt`), encoded in UTF-8.
 - Required columns:
   - `ID`:  
     - Metabolites: LIPID MAPS ID or PubChem CID.  
