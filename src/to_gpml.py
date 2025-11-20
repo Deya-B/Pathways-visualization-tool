@@ -486,10 +486,11 @@ class Pathway:
 class CSVPathwayParser:
     def __init__(self, csv_file, title="New Pathway", organism="Homo sapiens", delimiter=None):
         self.csv_file = csv_file
+        self.delimiter = delimiter
         self.pathway = Pathway(title, organism)
         self.conversions = []                       # [(src_lbl, tgt_lbl)]
         self.pending_catalysis = defaultdict(list)  # (src_lbl, tgt_lbl) -> [enzyme_lbl]
-        self.delimiter = delimiter
+
     
     def read(self):
         with open(self.csv_file, newline="", encoding="utf-8") as f:
@@ -500,7 +501,7 @@ class CSVPathwayParser:
                     self.pathway.add_node(Node(row["Node Type"], lbl, 
                                           row.get("Database",""), row.get("Database_ID","")))
                 # conversion
-                if row.get("Interaction Type") == "Conversion" and row.get("Interaction With"):
+                if row.get("Interaction Type") == "Conversion" and row.get("Interaction With"): # para que no coja esos que no tienen interacciones (los finales)
                     key = (lbl, row["Interaction With"])
                     self.conversions.append(key)
                     # Collect enzyme if it comes in the "Catalytic" column
