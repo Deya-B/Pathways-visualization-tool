@@ -2,12 +2,12 @@
 
 This folder contains the main Python pipelines used in the project:
 
-- `DB_crosslink.py`: cross‑referencing pipeline for metabolite and protein identifiers.
-- `to_gpml.py`: prototype converter from tabular pathway descriptions to GPML.
+- [`DB_crosslink.py`](#cross‑referencing-pipeline): cross‑referencing pipeline for metabolite and protein identifiers.
+- [`to_gpml.py`](#gpml-converter-prototype): prototype converter from tabular pathway descriptions to GPML.
 
 ---
 
-## Cross‑referencing Pipeline (`DB_crosslink.py`)
+## Cross‑referencing Pipeline
 
 `DB_crosslink.py` annotates metabolite and protein identifiers from **LipidMaps**, **UniProt**, and **PubChem**, and adds cross‑references to several metabolite databases plus RefSeq accessions for proteins.
 
@@ -127,7 +127,7 @@ The script generates this `example_updated.txt`:
 
 ---
 
-## GPML converter prototype (`to_gpml.py`)
+## GPML converter prototype
 
 `to_gpml.py` is a **work‑in‑progress** prototype that converts a CSV description of a pathway into a **GPML** file that can be opened and edited in **PathVisio** and potentially uploaded to **WikiPathways**.
 
