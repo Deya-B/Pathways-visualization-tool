@@ -60,8 +60,8 @@ class TSVParser:
                 return col
         raise KeyError(f"Column with keyword '{keyword}' not found")
 
-    def get_node_relations(self):
-        """Extracts relation tuples and saves in self.node_relations."""
+    def get_relations(self):
+        """Extract relation tuples and saves in self.node_relations."""
         # find column names containing source, target and catalyser
         source_col = self.find_column(self.relations_df, "source")
         target_col = self.find_column(self.relations_df, "target")
@@ -73,33 +73,24 @@ class TSVParser:
             # Append as tuple (source, target, catalyser)
             self.node_relations.append((source_db_id, target_db_id, catalyser_db_id))
 
-    def get_node_ids(self):
-        """Get IDs"""
-        # get source node ids
-        source_ids = [source_db_id for source_db_id,target_db_id,catalyser_db_id 
-                      in self.node_relations]
-        # removing the NaN
-        source_ids_clean = [x for x in source_ids if pd.notnull(x)]
-
-        # get catalyser ids
-        catalyser_ids = [catalyser_db_id 
-                         for source_db_id,target_db_id,catalyser_db_id
-                         in self.node_relations]
-        # removing the NaN
-        catalyser_ids_clean = [x for x in catalyser_ids if pd.notnull(x)]
-
-        return source_ids_clean, catalyser_ids_clean
-
     def get_node_info(self):
-        pass
-        # """Extract information from nodes"""
-        # source_id, target_id = get_node_ids()
-        # source_data = self.id_data_df[self.id_data_df["ID"].isin(source_ids_clean)]
-        # print(source_data)
-        # node_list = [Node.from_row(row) for _, row in source_data.iterrows()]
-
-        # catalysis_data = self.id_data_df[self.id_data_df["ID"].isin(catalyser_ids_clean)]
-        # print(catalysis_data)
+        """Extract Common_Name and DataBase for the given IDs."""
+        # Call to get_relations and obtain IDs
+        self.get_relations()
+        source_ids = [x[0] for x in self.node_relations if pd.notnull(x[0])]
+        catalyser_ids = [x[2] for x in self.node_relations if pd.notnull(x[2])]
+        # Get column names for node id, common_name and DB
+        name_col = self.find_column(self.id_data_df, "common_name")
+        db_col = self.find_column(self.id_data_df, "database")
+        id_col = self.find_column(self.id_data_df, "id")
+        # Get data for the given id's
+        sources_info = self.id_data_df.loc[             # localize in the df
+            self.id_data_df[id_col].isin(source_ids),   # the row with ID
+            [id_col, db_col, name_col]]                 # then the columns
+        catalyser_info = self.id_data_df.loc[
+            self.id_data_df[id_col].isin(catalyser_ids), 
+            [id_col, db_col, name_col]]
+        return sources_info, catalyser_info
 
     def get_interactions(self):
         pass
@@ -121,8 +112,7 @@ def execute_main():
     organism = "Homo sapiens, Mus-musculus"
 
     parser = TSVParser(ID_data_file, relations_file)
-    parser.get_node_relations()
-    parser.get_node_ids()
+    print(parser.get_node_info())
 
 
 ################################ NODE #########################################
