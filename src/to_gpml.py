@@ -51,37 +51,79 @@ class TSVParser:
         self.node_relations = []
 
     def read(self, file):
+        """Read file and return DataFrame"""
         return pd.read_csv(file, sep=self.delimiter, encoding="utf-8")
     
-    # helper methods
-    def get_node_relations(self):
-        relations = self.relations_df.to_numpy()
-        for row in relations:
-            source_db_id, target_db_id, catalyser_db_id = row[:3] # get the first 3 elem
-            self.node_relations.append((source_db_id,target_db_id,catalyser_db_id))
+    def find_column(self, df, keyword):
+        for col in df.columns:
+            if keyword in col.lower():
+                return col
+        raise KeyError(f"Column with keyword '{keyword}' not found")
 
-    def get_node_info(self):
-        # type, label, db
-        source_ids = [source_db_id 
-                      for source_db_id,target_db_id,catalyser_db_id 
+    def get_node_relations(self):
+        """Extracts relation tuples and saves in self.node_relations."""
+        # find column names containing source, target and catalyser
+        source_col = self.find_column(self.relations_df, "source")
+        target_col = self.find_column(self.relations_df, "target")
+        catalyser_col = self.find_column(self.relations_df, "catal")
+        for _, row in self.relations_df.iterrows():
+            source_db_id = row[source_col]
+            target_db_id = row[target_col]
+            catalyser_db_id = row[catalyser_col]
+            # Append as tuple (source, target, catalyser)
+            self.node_relations.append((source_db_id, target_db_id, catalyser_db_id))
+
+    def get_node_ids(self):
+        """Get IDs"""
+        # get source node ids
+        source_ids = [source_db_id for source_db_id,target_db_id,catalyser_db_id 
                       in self.node_relations]
         # removing the NaN
         source_ids_clean = [x for x in source_ids if pd.notnull(x)]
-        source_data = self.id_data_df[self.id_data_df["ID"].isin(source_ids_clean)]
-        print(source_data)
+
+        # get catalyser ids
         catalyser_ids = [catalyser_db_id 
                          for source_db_id,target_db_id,catalyser_db_id
                          in self.node_relations]
         # removing the NaN
         catalyser_ids_clean = [x for x in catalyser_ids if pd.notnull(x)]
-        catalysis_data = self.id_data_df[self.id_data_df["ID"].isin(catalyser_ids_clean)]
-        print(catalysis_data)
+
+        return source_ids_clean, catalyser_ids_clean
+
+    def get_node_info(self):
+        pass
+        # """Extract information from nodes"""
+        # source_id, target_id = get_node_ids()
+        # source_data = self.id_data_df[self.id_data_df["ID"].isin(source_ids_clean)]
+        # print(source_data)
+        # node_list = [Node.from_row(row) for _, row in source_data.iterrows()]
+
+        # catalysis_data = self.id_data_df[self.id_data_df["ID"].isin(catalyser_ids_clean)]
+        # print(catalysis_data)
 
     def get_interactions(self):
         pass
 
     def save(self):
         pass
+
+
+################################ MAIN #########################################
+
+def execute_main():
+    # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
+    #home
+    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
+    
+    pathway_title = "Secondary BA Synthesis (CA-Based reactions)"
+    organism = "Homo sapiens, Mus-musculus"
+
+    parser = TSVParser(ID_data_file, relations_file)
+    parser.get_node_relations()
+    parser.get_node_ids()
+
 
 ################################ NODE #########################################
 ## Description:
@@ -191,12 +233,12 @@ class Layout:
 
 def xml_build(nodes, interactions, title="New Pathway", organism=None):
     pass
-#     def __init__(self, title="New Pathway", organism=None):
-#         self.title = title
-#         self.organism = organism
-#         self._laid_out = False 
-#         self.nodes = {}             # Node label
-#         self.interactions = []
+    def __init__(self, title="New Pathway", organism=None):
+        self.title = title
+        self.organism = organism
+        self._laid_out = False 
+        self.nodes = {}             # Node label
+        self.interactions = []
 
 
 ############################ ID GENERATOR #####################################
@@ -239,21 +281,7 @@ class IDGenerator:
 idgenerator = IDGenerator()
 
 
-################################ MAIN #########################################
 
-def execute_main():
-    # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
-    #home
-    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
-    
-    pathway_title = "Secondary BA Synthesis (CA-Based reactions)"
-    organism = "Homo sapiens, Mus-musculus"
-
-    parser = TSVParser(ID_data_file, relations_file)
-    parser.get_node_relations()
-    parser.get_node_info()
 
 ############################# ENTRY POINT #####################################
 
