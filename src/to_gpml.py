@@ -118,7 +118,7 @@ def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", 
 
     # DF from Data file
     id_data_df = pd.read_csv(ID_data_file, sep=delimiter, encoding="utf-8")
-    id_col,name_col,db_col = id_data_df.columns[0:3] # extract column names
+    id_col,db_col,name_col = id_data_df.columns[0:3] # extract column names
     
     node_dict = {}  # Keep record of metabolite nodes already mapped
     # Iterate over the rows as relations in tuples of three
