@@ -1,6 +1,7 @@
-# Module docstring (what this file is about)
+# TODO: ADD Module docstring (what this file is about)
 import csv
 import datetime
+import re
 
 import pandas as pd
 from collections import defaultdict
@@ -39,82 +40,6 @@ import networkx as nx
 # ENZYME_STACK_GAP = 60.0 # separation between multiple enzymes on the same anchor
 
 
-################################ PARSER #######################################
-
-class TSVParser:
-    def __init__(self, ID_data_file, relations_file, delimiter="\t"):
-        self.delimiter = delimiter
-        self.ID_data_file = ID_data_file
-        self.relations_file = relations_file
-        self.id_data_df = self.read(self.ID_data_file)
-        self.relations_df = self.read(self.relations_file)
-        self.node_relations = []
-
-    def read(self, file):
-        """Read file and return DataFrame"""
-        return pd.read_csv(file, sep=self.delimiter, encoding="utf-8")
-    
-    def find_column(self, df, keyword):
-        for col in df.columns:
-            if keyword in col.lower():
-                return col
-        raise KeyError(f"Column with keyword '{keyword}' not found")
-
-    def get_relations(self):
-        """Extract relation tuples and saves in self.node_relations."""
-        # find column names containing source, target and catalyser
-        source_col = self.find_column(self.relations_df, "source")
-        target_col = self.find_column(self.relations_df, "target")
-        catalyser_col = self.find_column(self.relations_df, "catal")
-        for _, row in self.relations_df.iterrows():
-            source_db_id = row[source_col]
-            target_db_id = row[target_col]
-            catalyser_db_id = row[catalyser_col]
-            # Append as tuple (source, target, catalyser)
-            self.node_relations.append((source_db_id, target_db_id, catalyser_db_id))
-
-    def get_node_info(self):
-        """Extract Common_Name and DataBase for the given IDs."""
-        # Call to get_relations and obtain IDs
-        self.get_relations()
-        source_ids = [x[0] for x in self.node_relations if pd.notnull(x[0])]
-        catalyser_ids = [x[2] for x in self.node_relations if pd.notnull(x[2])]
-        # Get column names for node id, common_name and DB
-        name_col = self.find_column(self.id_data_df, "common_name")
-        db_col = self.find_column(self.id_data_df, "database")
-        id_col = self.find_column(self.id_data_df, "id")
-        # Get data for the given id's
-        sources_info = self.id_data_df.loc[             # localize in the df
-            self.id_data_df[id_col].isin(source_ids),   # the row with ID
-            [id_col, db_col, name_col]]                 # then the columns
-        catalyser_info = self.id_data_df.loc[
-            self.id_data_df[id_col].isin(catalyser_ids), 
-            [id_col, db_col, name_col]]
-        return sources_info, catalyser_info
-
-    def get_interactions(self):
-        pass
-
-    def save(self):
-        pass
-
-
-################################ MAIN #########################################
-
-def execute_main():
-    # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
-    #home
-    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
-    
-    pathway_title = "Secondary BA Synthesis (CA-Based reactions)"
-    organism = "Homo sapiens, Mus-musculus"
-
-    parser = TSVParser(ID_data_file, relations_file)
-    print(parser.get_node_info())
-
-
 ################################ NODE #########################################
 ## Description:
     # GPML DataNode (metabolite or enzyme). Contains the Node properties.
@@ -133,16 +58,16 @@ def execute_main():
 class Node:
 
     def __init__(self, node_type, label, database, db_id):
-        self.node_type = node_type      
+        self.node_type = node_type  
         self.label = label
         self.database = database
         self.db_id = db_id
         self.graph_id = idgenerator.new(self.node_type)
         self.x, self.y = None, None
-        self.width = 90.0 + len(self.label) * 4
-        self.height = 25.0
+        # self.width = 90.0 + len(self.label) * 4
+        # self.height = 25.0
     
-
+    
     def obtain_coords(self, x: float, y: float) -> None: # making sure to get floats
         """Set positions as center coordinates in pixels.
 
@@ -153,82 +78,113 @@ class Node:
         self.x, self.y = float(x), float(y)
         pass
 
-
     def to_gpml(self):
         "Serialize to XML"
-        pass
+        node_type = "GeneProduct" if self.node_type.lower() == "enzyme" else "Metabolite"
+        datanode = ET.Element("DataNode", {
+            "TextLabel": self.label,
+            "GraphId": self.graph_id,
+            "Type": node_type
+        })
+        ET.SubElement(datanode, "Graphics", {
+            "CenterX": str(self.x),
+            "CenterY": str(self.y),
+            "Width": str(self.width),
+            "Height": str(self.height),
+            "FontSize": "12",
+            "Valign": "Middle", 
+            "Color": "0000ff" if node_type == "Metabolite" else "000000" 
+        })
+        ET.SubElement(datanode, "Xref", {
+            "Database": self.database,
+            "ID": self.db_id
+        })
 
-
-    # Extract each row from tabular data and transform into a Node
-    @classmethod
-    def from_row(cls, row):
-        node_type, label, database, db_id = row[:4]  # Adjust columns as needed
-        return cls(node_type, label, database, db_id)
+    # # Extract each row from tabular data and transform into a Node object
+    # @classmethod
+    # def from_row(cls, row, node_type_col, label_col, database_col, db_id_col):
+    #     label = row[label_col]
+    #     database = row[database_col]
+    #     db_id = row[db_id_col] 
+    #     return cls(label, database, db_id)
     
 
-############################## INTERACTION ####################################
-## Description:
-    # Represents conversions or catalysis from nodes
-    # Computes anchors for catalytic reactions
-## Attributes:
-        # source: Source Node
-        # target: Target Node: if target=conversion | None: if target=anchor
-        # type: interaction type (conversion, catalysis...)
-        # anchor_pos: (default_anchor_pos = 0.4) position for the anchor
-        # anchor_id: set for conversion > used as a destination in catalysis
-        # anchor_xy: calculate anchor coords (to be computed ONLY if coordinates exist)
-## Methods:
+################################ MAIN #########################################
 
-class Interaction: 
-    default_anchor_pos = 0.4
-    def __init__(self, source, target, interaction_type, anchor_pos=None, anchor_id=None):
-        self.source = source                
-        self.target = target               
-        self.interaction_type = (interaction_type or "").lower()
-        self.anchor_pos = float(anchor_pos) if anchor_pos is not None else self.default_anchor_pos
-        self.anchor_id = anchor_id          
-        self._anchor_xy = None              # private: to be computed ONLY if coordinates exist
+def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", ):
+    # DF from Relations file 
+    relations_df = pd.read_csv(relations_file, sep=delimiter, encoding="utf-8")
+    source_col, target_col, catalyser_col = relations_df.columns[0:3] # extract column names
 
-
-    def compute_anchor_xy(self):
-        """Compute anchor coordinates on the source-target line."""
-        if not self._can_compute_anchor():
-            return None
-        x1 = self.source.x; y1 = self.source.y + self.source.height/2.0                          
-        x2 = self.target.x; y2 = self.target.y - self.target.height/2.0
-        ax = x1 + self.anchor_pos * (x2 - x1)
-        ay = y1 + self.anchor_pos * (y2 - y1)
-        self._anchor_xy = (ax, ay)
-        return self._anchor_xy
+    # DF from Data file
+    id_data_df = pd.read_csv(ID_data_file, sep=delimiter, encoding="utf-8")
+    id_col,name_col,db_col = id_data_df.columns[0:3] # extract column names
     
-    def to_gpml(self):
-        pass
+    node_dict = {}  # Keep record of metabolite nodes already mapped
+    # Iterate over the rows as relations in tuples of three
+    print(relations_df.itertuples)
+    for row in relations_df.itertuples():
+        # Source
+        source_id = getattr(row, source_col) # Get ID
+        if source_id not in node_dict and pd.notnull(source_id):
+            # Matching ID with that from id_data_df
+            match_row = id_data_df[id_data_df[id_col] == source_id]
+            if not match_row.empty:
+                info = match_row.iloc[0]
+                if is_wikipathways(source_id) or is_kegg(source_id):
+                    node_type = "Pathway"
+                else:
+                    node_type = "Metabolite"
+                # Extract info from tabular data and transform into a Node object
+                node = Node(node_type, info[name_col], info[db_col], source_id)
+                node_dict[source_id] = node
+    
+        # Target
+        target_id = getattr(row, target_col) # Get ID
+        if target_id not in node_dict and pd.notnull(target_id):
+            match_row = id_data_df[id_data_df[id_col] == target_id]
+            if not match_row.empty:
+                info = match_row.iloc[0]
+                if is_wikipathways(target_id) or is_kegg(target_id):
+                    node_type = "Pathway"
+                else:
+                    node_type = "Metabolite"
+                node = Node(node_type, info[name_col], info[db_col], target_id)
+                node_dict[target_id] = node
+
+        # Catalyser (always create new, even if repeated)
+        catal_id = getattr(row, catalyser_col)
+        if pd.notnull(catal_id):
+            match_row = id_data_df[id_data_df[id_col] == catal_id]
+            if not match_row.empty:
+                info = match_row.iloc[0]
+                node = Node("GeneProduct", info[name_col], info[db_col], catal_id)
+                node_dict[catal_id] = node
+
+    
+    for key, node in node_dict.items():
+        print(f"{key}: {vars(node)}")  # vars() returns the attributes as a dict
+        
+
+########################### HELPER FUNCIONS ###################################
+
+def is_wikipathways(id_str):
+    """Check if source/target ID match Pathway WikiPathways database, 
+    which can have the form WP1234, WP12345_r2, for example"""
+    return re.match(r'WP\d{1,5}(_r\d+)?$', str(id_str)) is not None
+
+def is_kegg(id_str):
+    """Check if source/target ID match Pathway WikiPathways database, 
+    which has the form hsa00120, for example"""
+    return re.match(r'^\w{2,4}\d{5}$', str(id_str)) is not None
 
 
-############################# LAYOUT CREATION #################################
 
-## PASAR A AQUÍ TODO LO RELATIVO A COORDENADAS Y LAYOUT...
-
-class Layout:
-    def __init__(self):
-        pass
-
-
-############################### XML BUILD #####################################
-
-## PASAR A AQUÍ TODO LO RELATIVO AL XML...
-    # Gather all your nodes/interactions from TSVParser
-    # Build the XML tree using their to_gpml() methods
-    # Optionally assign coordinates/layout here
-
-def xml_build(nodes, interactions, title="New Pathway", organism=None):
-    pass
-    def __init__(self, title="New Pathway", organism=None):
-        self.title = title
-        self.organism = organism
-        self._laid_out = False 
-        self.nodes = {}             # Node label
-        self.interactions = []
+# def get_columns(df, keyword):
+#     for col in df.columns:
+#         if keyword in col.lower():
+#             return col
+#     raise KeyError(f"Column with keyword '{keyword}' not found")
 
 
 ############################ ID GENERATOR #####################################
@@ -252,7 +208,6 @@ class IDGenerator:
     def __init__(self):
         self.counters = defaultdict(int)        
  
-
     def _prefix(self, kind: str) -> str:         
         k = (kind or "").lower()
         if k in {"enzyme", "geneproduct", "gene", "protein", "e"}: return "e"
@@ -260,7 +215,6 @@ class IDGenerator:
         if k in {"anchor", "a"}:                                   return "a"
         if k in {"interaction", "edge", "i"}:                      return "i"
         return "n"
-
 
     def new(self, kind: str) -> str:
         p = self._prefix(kind)
@@ -271,12 +225,86 @@ class IDGenerator:
 idgenerator = IDGenerator()
 
 
+############################## INTERACTION ####################################
+## Description:
+    # Represents conversions or catalysis from nodes
+    # Computes anchors for catalytic reactions
+## Attributes:
+        # source: Source Node
+        # target: Target Node: if target=conversion | None: if target=anchor
+        # type: interaction type (conversion, catalysis...)
+        # anchor_pos: (default_anchor_pos = 0.4) position for the anchor
+        # anchor_id: set for conversion > used as a destination in catalysis
+        # anchor_xy: calculate anchor coords (to be computed ONLY if coordinates exist)
+## Methods:
+
+# class Interaction: 
+#     default_anchor_pos = 0.4
+#     def __init__(self, source, target, interaction_type, anchor_pos=None, anchor_id=None):
+#         self.source = source                
+#         self.target = target               
+#         self.interaction_type = (interaction_type or "").lower()
+#         self.anchor_pos = float(anchor_pos) if anchor_pos is not None else self.default_anchor_pos
+#         self.anchor_id = anchor_id          
+#         self._anchor_xy = None              # private: to be computed ONLY if coordinates exist
+
+
+#     def compute_anchor_xy(self):
+#         """Compute anchor coordinates on the source-target line."""
+#         if not self._can_compute_anchor():
+#             return None
+#         x1 = self.source.x; y1 = self.source.y + self.source.height/2.0                          
+#         x2 = self.target.x; y2 = self.target.y - self.target.height/2.0
+#         ax = x1 + self.anchor_pos * (x2 - x1)
+#         ay = y1 + self.anchor_pos * (y2 - y1)
+#         self._anchor_xy = (ax, ay)
+#         return self._anchor_xy
+    
+#     def to_gpml(self):
+#         pass
+
+
+
+############################# LAYOUT CREATION #################################
+
+## PASAR A AQUÍ todo LO RELATIVO A COORDENADAS Y LAYOUT...
+
+class Layout:
+    def __init__(self):
+        pass
+
+
+############################## XML BUILD #####################################
+
+# PASAR A AQUÍ todo LO RELATIVO AL XML...
+    # Gather all your nodes/interactions from TSVParser
+    # Build the XML tree using their to_gpml() methods
+    # Optionally assign coordinates/layout here
+
+def xml_build(nodes, interactions, title="New Pathway", organism=None):
+    pass
+    def __init__(self, title="New Pathway", organism=None):
+        self.title = title
+        self.organism = organism
+        self._laid_out = False 
+        self.nodes = {}             # Node label
+        self.interactions = []
 
 
 ############################# ENTRY POINT #####################################
 
 if __name__ == "__main__":
-    execute_main()
+    ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
+    #home
+    # ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    # relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
+    
+    pathway_title = "Secondary BA Synthesis (CA-Based reactions)"
+    organism = "Homo sapiens, Mus-musculus"
+
+    main(pathway_title, organism, ID_data_file, relations_file)
+
 
 ## NOTES
 # default delimiter="\t" 
