@@ -31,14 +31,6 @@ import networkx as nx
 # TODO: add checkup that all metabolite names/labels are unique
 
 
-# ###################### Layout/Board CONFIGURATION #############################
-
-# BOARD_MARGIN = 100.0    # margin around everything
-# LAYER_GAP = 100.0       # vertical separation between BFS layers
-# COL_GAP = 140.0         # approximate horizontal separation
-# ENZYME_OFFSET = 0.0     # distance from the anchor to the enzyme
-# ENZYME_STACK_GAP = 60.0 # separation between multiple enzymes on the same anchor
-
 ################################ NODE #########################################
 ## Description:
     # GPML DataNode (metabolite or enzyme). Contains the Node properties.
@@ -116,16 +108,22 @@ class Node:
 
 class Interaction: 
     default_anchor_pos = 0.4
-    def __init__(self, source, target, interaction_type, anchor_pos=None, anchor_id=None):
+    def __init__(self, source, target, interaction_type):
         self.graph_id = idgenerator.new("interaction")
         self.source = source                
         self.target = target               
         self.type = (interaction_type or "").lower()
+
+    def to_gpml(self):
+        pass
+
+class ConversionInteraction(Interaction):
+    default_anchor_pos = 0.4
+    def __init__(self, source, target, anchor_pos=None, anchor_id=None):
+        super().__init__(source, target, "mim-conversion")
         self.anchor_pos = float(anchor_pos) if anchor_pos is not None else self.default_anchor_pos
         self.anchor_id = anchor_id          
-        self._anchor_xy = None              # private: to be computed ONLY if coordinates exist
-
-        # self.ArrowHead = if enzyme is "mim-catalysis" else "mim-conversion"
+        self._anchor_xy = None # private: to be computed ONLY if coordinates exist
 
     def compute_anchor_xy(self):
         """Compute anchor coordinates on the source-target line."""
@@ -137,10 +135,63 @@ class Interaction:
         ay = y1 + self.anchor_pos * (y2 - y1)
         self._anchor_xy = (ax, ay)
         return self._anchor_xy
-    
-    def to_gpml(self):
-        pass
 
+
+
+###################### Layout/Board CONFIGURATION #############################
+
+BOARD_MARGIN = 100.0    # margin around everything
+LAYER_GAP = 100.0       # vertical separation between BFS layers
+COL_GAP = 140.0         # approximate horizontal separation
+ENZYME_OFFSET = 0.0     # distance from the anchor to the enzyme
+ENZYME_STACK_GAP = 60.0 # separation between multiple enzymes on the same anchor
+
+############################# LAYOUT CREATION #################################
+
+## PASAR A AQUÍ todo LO RELATIVO A COORDENADAS Y LAYOUT...
+
+class Layout:
+    def __init__(self, nodes, interactions):
+        self.nodes = nodes                # Dict of nodes, keyed by graph_id
+        self.interactions = interactions  # List of Interactions
+        self._laid_out = False
+
+    def assign_layout(self):
+        # A) Skeleton graph (metabolites only)
+        G = nx.Graph()
+        for n in self.nodes.values():
+            if n.node_type.lower() == "enzyme":
+                continue
+            G.add_node(n.graph_id)
+        for e in self.interactions:
+            if e.type == "conversion":
+                G.add_edge(e.source.graph_id, e.target.graph_id)
+
+        # B) BFS layering (topology -> rows)
+        layers = list(nx.bfs_layers(G, [next(iter(G.nodes))])) if G.number_of_nodes() else []
+
+        # C) Place metabolites row-by-row (grid)
+        k_max = max((len(L) for L in layers), default=1)
+        span_max = max(0, (k_max - 1) * COL_GAP)
+
+        placed = set()
+        for ly, layer_nodes in enumerate(layers):
+            k = len(layer_nodes)
+            span = max(0, (k - 1) * COL_GAP)
+            start_x = BOARD_MARGIN + (span_max - span) / 2.0
+            y = BOARD_MARGIN + ly * LAYER_GAP
+            for i, gid in enumerate(layer_nodes):
+                node = self.nodes[gid]
+                x = start_x + i * COL_GAP
+                node.coords(x, y)
+                placed.add(gid)
+
+        # D) Temporarily place rest (enzymes/others) on extra row
+        rest = [n for gid, n in self.nodes.items() if gid not in placed]
+        for j, node in enumerate(rest):
+            node.coords(BOARD_MARGIN + j * COL_GAP, BOARD_MARGIN + (len(layers) + 1) * LAYER_GAP)
+
+        self._laid_out = True
 
         
 ################################ MAIN #########################################
@@ -194,18 +245,16 @@ def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", 
                 # record that this metabolite is already mapped
                 db_index[target_id] = node.graph_id
 
-        # Interactions
+        # Conversion Interactions (source-target)
         source_node = nodes_dict_info.get(db_index.get(source_id))
         target_node = nodes_dict_info.get(db_index.get(target_id))
         # print("source:", source_node.graph_id, "target:", target_node.graph_id)
 
         if source_node and target_node:
-            conversion = Interaction(
-                source=source_node.graph_id, target=target_node.graph_id, 
-                interaction_type="mim-conversion"
-                )
+            conversion = ConversionInteraction(
+                source=source_node, target=target_node)
             interactions_list.append(conversion)
-            
+
 
         # Build CATALYSER Nodes (store multiple nodes even if repeated)
         if pd.notnull(catal_id):
@@ -217,67 +266,19 @@ def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", 
                     "GeneProduct", info[name_col], info[db_col], catal_id
                     )
                 nodes_dict_info[catal_node.graph_id] = catal_node
+            # Catalytic Interactions 
             catal_inter = Interaction(
-                source=catal_node.graph_id, target=None, interaction_type="mim-catalysis"
-                )  # target -> the anchor of a conversion must be assigned
+                source=catal_node, target=None, # target -> the anchor of a conversion must be assigned 
+                interaction_type="mim-catalysis"
+                )  
             interactions_list.append(catal_inter)
-
-
+    # Checker
     # for key, node in nodes_dict_info.items():
     #     print(f"{key}: {vars(node)}")  # vars() returns the attributes as a dict
-        
-    for inter in interactions_list:
-        print(f"{inter.source} → {inter.target}: {vars(inter)}")
+    # for inter in interactions_list:
+    #     print(f"{inter.source} → {inter.target}: {vars(inter)}")
 
-
-
-############################# LAYOUT CREATION #################################
-
-## PASAR A AQUÍ todo LO RELATIVO A COORDENADAS Y LAYOUT...
-
-class Layout:
-    def __init__(self, nodes, interactions):
-        self.nodes = nodes          # Dict of nodes, keyed by graph_id
-        self.interactions = interactions  # List of Interaction objects
-        self._laid_out = False
-
-    # def assign_layout(self):
-    #     # A) Skeleton graph (metabolites only)
-    #     G = nx.Graph()
-    #     for n in self.nodes.values():
-    #         if n.node_type.lower() == "enzyme":
-    #             continue
-    #         G.add_node(n.graph_id)
-    #     for e in self.interactions:
-    #         if e.type == "conversion":
-    #             G.add_edge(e.source.graph_id, e.target.graph_id)
-
-    #     # B) BFS layering (topology -> rows)
-    #     layers = list(nx.bfs_layers(G, [next(iter(G.nodes))])) if G.number_of_nodes() else []
-
-    #     # C) Place metabolites row-by-row (grid)
-    #     k_max = max((len(L) for L in layers), default=1)
-    #     span_max = max(0, (k_max - 1) * COL_GAP)
-
-    #     placed = set()
-    #     for ly, layer_nodes in enumerate(layers):
-    #         k = len(layer_nodes)
-    #         span = max(0, (k - 1) * COL_GAP)
-    #         start_x = BOARD_MARGIN + (span_max - span) / 2.0
-    #         y = BOARD_MARGIN + ly * LAYER_GAP
-    #         for i, gid in enumerate(layer_nodes):
-    #             node = self.nodes[gid]
-    #             x = start_x + i * COL_GAP
-    #             node.coords(x, y)
-    #             placed.add(gid)
-
-    #     # D) Temporarily place rest (enzymes/others) on extra row
-    #     rest = [n for gid, n in self.nodes.items() if gid not in placed]
-    #     for j, node in enumerate(rest):
-    #         node.coords(BOARD_MARGIN + j * COL_GAP, BOARD_MARGIN + (len(layers) + 1) * LAYER_GAP)
-
-    #     self._laid_out = True
-
+    Layout(nodes_dict_info, interactions_list)
 
 ########################### HELPER FUNCIONS ###################################
 
@@ -290,7 +291,6 @@ def is_kegg(id_str):
     """Check if source/target ID match Pathway WikiPathways database, 
     which has the form hsa00120, for example"""
     return re.match(r'^[a-zA-Z]{2,4}\d{5}$', str(id_str)) is not None
-
 
 
 # def get_columns(df, keyword):
