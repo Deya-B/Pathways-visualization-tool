@@ -290,7 +290,7 @@ class Layout:
             and inter._anchor_xy is not None
         }
 
-        # G) place enzymes near their anchors
+        # G) place enzymes on their anchors
         for inter in self.interactions:
             enz = inter.source          # Node (GeneProduct)
             a_id = getattr(inter, "anchor_id", None)
@@ -302,44 +302,7 @@ class Layout:
         # H) Compute the FINAL board size now that everyone has coords
         # self._compute_board_size()
 
-        # self._laid_out = True
-
-
-    def _place_enzymes(self): 
-   
-    #     """
-    #     Place the enzymes at:
-    #     - the range of their conversion if they only catalyze one,
-    #     - the centroid (mean of X,Y) of all their ranges if they catalyze several.
-    #     """       
-    #     # 1) (src_label, tgt_label) -> (ax, ay) of the conversion
-    #     conv_to_xy = {}   
-    #     for (s_lbl, t_lbl), conv in self._conv_key_to_inter.items():
-    #         axay = conv.anchor_xy
-    #         if axay:
-    #             conv_to_xy[(s_lbl, t_lbl)] = axay
-
-    #     # 2) map: enzyme -> list (ax, ay) of the reactions it catalyzes
-    #     enz_to_points = defaultdict(list)
-    #     for key, enz_list in self._conv_key_to_catalysts.items():
-    #         if key not in conv_to_xy:
-    #             continue
-    #         ax, ay = conv_to_xy[key]
-    #         for enz_lbl in enz_list:
-    #             if enz_lbl in self.nodes: #(defensive) ignore enzymes not created as a node 
-    #                 enz_to_points[enz_lbl].append((ax, ay))
-        
-    #     # 3) placing on anchor or in centroid
-    #     for enz_lbl, pts in enz_to_points.items():
-    #         if not pts:
-    #             continue
-    #         if len(pts) == 1:
-    #             ex, ey = pts[0]
-    #         else:
-    #             ex = sum(p[0] for p in pts) / len(pts)
-    #             ey = sum(p[1] for p in pts) / len(pts)
-    #         self.nodes[enz_lbl].coords(ex, ey)
-        pass 
+        self._laid_out = True
 
 
 ############################## BUILDER CLASSES ################################
@@ -479,7 +442,8 @@ def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", 
     conversions_list = []
     for row in relations_df.itertuples():
         conversion = builder.build_conversions(row)
-        conversions_list.append(conversion)
+        if conversion is not None: 
+            conversions_list.append(conversion)
 
     # Assign layout to compute x,y and anchors for catalysis
     layout = Layout(builder.nodes, builder.interactions)
@@ -488,24 +452,24 @@ def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", 
     # Build catalytic reactions
     catalysis_list = []
     for row, conversion in zip(relations_df.itertuples(), conversions_list):
-        catal = builder.build_catalysis(row, conversion)
-        if catal is not None:     
-            catalysis_list.append(catal)
-
+        if conversion is not None:
+            catal = builder.build_catalysis(row, conversion)
+            if catal is not None:     
+                catalysis_list.append(catal)
 
     # Checkers
     for key, node in builder.nodes.items():
         print(f"{key}: {vars(node)}")  # vars() returns the attributes as a dict
 
-    # for inter in conversions_list:
-    #     source_label = inter.source.graph_id if inter.source else "None"
-    #     target_label = inter.target.graph_id if inter.target else "None"
-    #     print(f"{source_label} → {target_label}: {vars(inter)}")
+    for inter in conversions_list:
+        source_label = inter.source.graph_id if inter.source else "None"
+        target_label = inter.target.graph_id if inter.target else "None"
+        print(f"{source_label} → {target_label}: {vars(inter)}")
 
-    # for inter in catalysis_list:
-    #     source_label = inter.source.graph_id if inter.source else "None"
-    #     target_label = inter.target
-    #     print(f"{source_label} → {target_label}: {vars(inter)}")
+    for inter in catalysis_list:
+        source_label = inter.source.graph_id if inter.source else "None"
+        target_label = inter.target
+        print(f"{source_label} → {target_label}: {vars(inter)}")
 
 
 ########################### HELPER FUNCIONS ###################################
@@ -563,11 +527,11 @@ idgenerator = IDGenerator()
 ############################# ENTRY POINT #####################################
 
 if __name__ == "__main__":
-    ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
+    # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
     #home
-    # ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    # relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
+    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
     
     pathway_title = "Secondary BA Synthesis (CA-Based reactions)"
     organism = "Homo sapiens, Mus-musculus"
