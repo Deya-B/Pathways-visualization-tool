@@ -230,8 +230,10 @@ class Layout:
         return (ax, ay)
 
 
-    def run(self):
-        # A) Skeleton graph (metabolites only)
+    def layout_positions(self):
+        """Pre-layout positions: Assign x,y to metabolites and pathways 
+        nodes only."""
+       # A) Skeleton graph with source/target nodes and conversion interactions only
         G = nx.Graph()
         for node in self.nodes.values():
             if node.node_type == "GeneProduct": # Ignore enzymes for now
@@ -241,7 +243,7 @@ class Layout:
             if isinstance(inter, ConversionInteraction):
                 G.add_edge(inter.source.graph_id, inter.target.graph_id)
 
-        # B) BFS layering (list of rows with the topology)           
+        # B) BFS layering, get a list of rows with the topology           
         has_nodes = G.number_of_nodes() > 0
         if has_nodes:
             start_node = next(iter(G.nodes))
@@ -251,18 +253,20 @@ class Layout:
         else:
             layers = []
 
-        # C) Setting X/Y coords
-        # Step 1. Get maximal layer size and width
+        # C) Setting x,y coords
+        # Step 1 - Get maximal layer size and width
         k_max = max((len(L) for L in layers), default=1) # find widest row
         span_max = max(0, (k_max - 1) * COL_GAP) # width occupied by the widest row
-        # Step 2. Loop through layers/rows
+        
+        # Step 2 - Loop through layers/rows
         placed = set() 
         for ly, layer_nodes in enumerate(layers): 
             k = len(layer_nodes) # number of nodes in this layer
             span = max(0, (k - 1) * COL_GAP) # row width for this layer
             start_x = BOARD_MARGIN + (span_max - span) / 2.0 # center this row  under the widest row
             y = BOARD_MARGIN + ly * LAYER_GAP # y-position for this row
-        # Step 3. Assign positions to the nodes
+        
+        # Step 3 - Assign positions to the nodes
             for i, graph_id in enumerate(layer_nodes):
                 node = self.nodes[graph_id]
                 x = start_x + i * COL_GAP # horizontal position in the row
@@ -274,35 +278,41 @@ class Layout:
         for j, node in enumerate(rest):
             node.coords(BOARD_MARGIN + j * COL_GAP, BOARD_MARGIN + (len(layers) + 1) * LAYER_GAP)
 
-        # E) Compute anchors on conversions
+        self._laid_out = True
+    
+
+    def layout_anchors(self):
+        """Compute conversion anchor coordinates. To obtain anchor ID and xy"""
         for inter in self.interactions:
             if isinstance(inter, ConversionInteraction):
-                anchor_xy = self.compute_anchor_xy(inter) # calculate anchor coords
-                inter._anchor_xy = self.compute_anchor_xy(inter) # update atribute
-                
-        # F) Synchronize catalysis interactions with those anchor coordinates
-        # Build an anchor dictionary: anchor_id -> anchor_xy for conversions
-        anchor_xy = {     
+                xy = self.compute_anchor_xy(inter) # calculate anchor coords
+                inter._anchor_xy = xy              # update atribute
+        
+
+    def layout_catalysis(self):
+        """Place enzyme nodes at their anchors once catalysis interactions exist."""
+        # Build anchor lookup: anchor_id -> anchor_xy for conversions
+        anchor_xy_dict = {     
             inter.anchor_id: inter._anchor_xy
             for inter in self.interactions
             if isinstance(inter, ConversionInteraction) 
-            and inter.anchor_id is not None
-            and inter._anchor_xy is not None
+                and inter.anchor_id is not None
+                and inter._anchor_xy is not None
         }
 
-        # G) place enzymes on their anchors
         for inter in self.interactions:
-            enz = inter.source          # Node (GeneProduct)
-            a_id = getattr(inter, "anchor_id", None)
-            if a_id in anchor_xy:
-                ax, ay = anchor_xy[a_id]
-                # simple placement: enzyme exactly at anchor
-                enz.coords(ax, ay)  
-                    
+            if inter.type == "mim-catalysis":
+            # Catalysis: source = enzyme/GeneProduct, target = anchor_id
+                enz = inter.source       
+                anchor_id = inter.target
+                if anchor_id in anchor_xy_dict and enz is not None:
+                    ax, ay = anchor_xy_dict[anchor_id]
+                    enz.coords(ax, ay) # place enzyme exactly at anchor
+            
         # H) Compute the FINAL board size now that everyone has coords
         # self._compute_board_size()
 
-        self._laid_out = True
+        
 
 
 ############################## BUILDER CLASSES ################################
@@ -438,38 +448,42 @@ def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", 
     # Parse DF and get node and interaction objects
     builder = Parser(id_data_df, relations_df)
     
-    # Build conversions
+    # Build source/target nodes + conversion interactions
     conversions_list = []
     for row in relations_df.itertuples():
         conversion = builder.build_conversions(row)
         if conversion is not None: 
             conversions_list.append(conversion)
 
-    # Assign layout to compute x,y and anchors for catalysis
+    # Assign layout to compute x,y coordinates + anchors for catalysis
     layout = Layout(builder.nodes, builder.interactions)
-    layout.run()  
-    
-    # Build catalytic reactions
+    layout.layout_positions()
+    layout.layout_anchors()  
+
+    # Build catalytic nodes + interactions
     catalysis_list = []
     for row, conversion in zip(relations_df.itertuples(), conversions_list):
         if conversion is not None:
             catal = builder.build_catalysis(row, conversion)
             if catal is not None:     
                 catalysis_list.append(catal)
+    layout.layout_catalysis() # place enzymes
+
+    
 
     # Checkers
-    for key, node in builder.nodes.items():
-        print(f"{key}: {vars(node)}")  # vars() returns the attributes as a dict
+    # for key, node in builder.nodes.items():
+    #     print(f"{key}: {vars(node)}")  # vars() returns the attributes as a dict
 
-    for inter in conversions_list:
-        source_label = inter.source.graph_id if inter.source else "None"
-        target_label = inter.target.graph_id if inter.target else "None"
-        print(f"{source_label} → {target_label}: {vars(inter)}")
+    # for inter in conversions_list:
+    #     source_label = inter.source.graph_id if inter.source else "None"
+    #     target_label = inter.target.graph_id if inter.target else "None"
+    #     print(f"{source_label} → {target_label}: {vars(inter)}")
 
-    for inter in catalysis_list:
-        source_label = inter.source.graph_id if inter.source else "None"
-        target_label = inter.target
-        print(f"{source_label} → {target_label}: {vars(inter)}")
+    # for inter in catalysis_list:
+    #     source_label = inter.source.graph_id if inter.source else "None"
+    #     target_label = inter.target
+    #     print(f"{source_label} → {target_label}: {vars(inter)}")
 
 
 ########################### HELPER FUNCIONS ###################################
