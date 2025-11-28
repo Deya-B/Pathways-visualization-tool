@@ -236,6 +236,16 @@ class Layout:
             if isinstance(inter, ConversionInteraction):
                 G.add_edge(inter.source.graph_id, inter.target.graph_id)
 
+
+        # See graph
+        labels = {n.graph_id: n.label for n in self.nodes.values()
+          if n.node_type != "GeneProduct"}
+        pos = nx.spring_layout(G)  # o cualquier layout
+        nx.draw(G, pos, labels=labels, node_color="lightblue", node_size=800, font_size=8)
+        plt.show()
+
+
+
         # BFS layering, get a list of rows with the topology           
         has_nodes = G.number_of_nodes() > 0
         if has_nodes: # creates lists of nodes by depth from a root/start node
@@ -530,11 +540,11 @@ idgenerator = IDGenerator()
 ############################# ENTRY POINT #####################################
 
 if __name__ == "__main__":
-    # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
+    ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
     #home
-    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
+    # ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    # relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
     
     pathway_title = "Secondary BA Synthesis (CA-Based reactions)"
     organism = "Homo sapiens, Mus-musculus"
