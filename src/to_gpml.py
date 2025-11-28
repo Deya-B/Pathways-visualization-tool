@@ -15,37 +15,28 @@ import matplotlib.pyplot as plt
     # * For classes: what it represents + key attrs
     # * For methods: what it does, args, returns, side-effects
 
-# TODO: add DataNode "Pathway"  
-# <DataNode TextLabel="Glucose metabolism" GraphId="f8db5" Type="Pathway">
-#     <Graphics CenterX="178.5" CenterY="157.625" Width="151.0" Height="19.25" ZOrder="32768" FontWeight="Bold" FontSize="12" Valign="Middle" Color="14961e" />
-#     <Xref Database="WikiPathways" ID="WP534" />
-#   </DataNode>
-
 # TODO: add elbows
     # In "mim-conversion" add ConnectorType = "Elbow"
     # Cambiar default_anchor_pos = 0.6
 
 # TODO: add organs > make like groups
 
-# TODO: add pathway info (id del pathway) en csv
-
-# TODO: add checkup that all metabolite names/labels are unique
-
 
 ################################ NODE #########################################
 ## Description:
-    # GPML DataNode (metabolite or enzyme). Contains the Node properties.
+    # GPML DataNode (metabolite, pathway or enzyme). 
+    # Contains the Node properties.
 ## Attributes:
-        # node_type: Semantic type, e.g. "Metabolite" or "Enzyme".
-        # label: Display text.
-        # database: Xref DB name.
-        # db_id: Xref ID.
+        # node_type: Semantic type. "Metabolite" "Pathway" or "GeneProduct"
+        # label: Display text
+        # database: Xref DB name
+        # db_id: Xref ID
         # graph_id: Unique GraphId in GPML.
-        # x, y: Center coordinates (PathVisio uses centers).
-        # width, height: Node box size in pixels.
+        # x, y: Center coordinates (PathVisio uses centers)
+        # width, height: Node box size in pixels
 ## Methods:
         # coords: Set center coordinates
-        # to_gpml: convert data to gpml
+        # to_gpml: convert data to GPML
 
 class Node:
 
@@ -233,27 +224,28 @@ class Layout:
     def layout_positions(self):
         """Pre-layout positions: Assign x,y to metabolites and pathways 
         nodes only."""
-       # A) Skeleton graph with source/target nodes and conversion interactions only
+       # Skeleton graph with source/target nodes and conversion interactions only
         G = nx.Graph()
+
         for node in self.nodes.values():
             if node.node_type == "GeneProduct": # Ignore enzymes for now
                 continue
             G.add_node(node.graph_id)
+
         for inter in self.interactions:
             if isinstance(inter, ConversionInteraction):
                 G.add_edge(inter.source.graph_id, inter.target.graph_id)
 
-        # B) BFS layering, get a list of rows with the topology           
+        # BFS layering, get a list of rows with the topology           
         has_nodes = G.number_of_nodes() > 0
-        if has_nodes:
+        if has_nodes: # creates lists of nodes by depth from a root/start node
             start_node = next(iter(G.nodes))
             bfs_layers_iterator = nx.bfs_layers(G, [start_node])
             layers = list(bfs_layers_iterator) 
-            # creates lists of nodes by depth from a root (start node)
         else:
             layers = []
 
-        # C) Setting x,y coords
+        # Setting x,y coords:
         # Step 1 - Get maximal layer size and width
         k_max = max((len(L) for L in layers), default=1) # find widest row
         span_max = max(0, (k_max - 1) * COL_GAP) # width occupied by the widest row
@@ -273,7 +265,7 @@ class Layout:
                 node.coords(x, y)
                 placed.add(graph_id) # save graph_ids already positioned
 
-        # D) Temporarily place enzymes on extra row
+        # Temporarily place enzymes on extra row
         rest = [n for graph_id, n in self.nodes.items() if graph_id not in placed]
         for j, node in enumerate(rest):
             node.coords(BOARD_MARGIN + j * COL_GAP, BOARD_MARGIN + (len(layers) + 1) * LAYER_GAP)
@@ -297,8 +289,7 @@ class Layout:
             for inter in self.interactions
             if isinstance(inter, ConversionInteraction) 
                 and inter.anchor_id is not None
-                and inter._anchor_xy is not None
-        }
+                and inter._anchor_xy is not None}
 
         for inter in self.interactions:
             if inter.type == "mim-catalysis":
@@ -309,10 +300,8 @@ class Layout:
                     ax, ay = anchor_xy_dict[anchor_id]
                     enz.coords(ax, ay) # place enzyme exactly at anchor
             
-        # H) Compute the FINAL board size now that everyone has coords
+        # Compute the FINAL board size now that everyone has coords
         # self._compute_board_size()
-
-        
 
 
 ############################## BUILDER CLASSES ################################
