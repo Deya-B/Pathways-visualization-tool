@@ -1,4 +1,6 @@
-# python DB_crosslink.py -c config.yaml
+# python DB_crosslink.py 
+#       -i C:\Users\deyan\Desktop\BIOINFORMATICA\1TFM\pathways_raw 
+#       -o C:\Users\deyan\Desktop\BIOINFORMATICA\1TFM\pathways_updated
 ###############################################################################
 #        Cross-referencing pipeline (LipidMaps / PubChem / UniProt)           # 
 ###############################################################################
@@ -60,10 +62,10 @@ logging.basicConfig(
     format="%(levelname)s:%(message)s")
 
 # Global variables with accepted variants
-PCHEM = ["pubchem cid", "pubchem"]
-LM = ["lipidmaps"]
-UPROT = ["uniprot"]
-SUPPORTED_DBS = PCHEM+UPROT+['hmbd', 'chebi']
+PCHEM = ["pubchem cid", "pubchem", "pubchem-compound"]
+LM = ["lipidmaps", "lipid maps"]
+UPROT = ["uniprot", "uniprot-trembl"]
+SUPPORTED_DBS = PCHEM+UPROT+['hmdb', 'chebi']
 # UniProt ID Pattern (verified according to official rules)
      # Ref.: https://www.uniprot.org/help/accession_numbers
 UNIPROT_PATTERN = (r"([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z]"
@@ -114,18 +116,18 @@ def fetch_lipidmaps_info(query_id):
         if isinstance(data, dict) and any(k.startswith("Row") for k in data):
             first_row = data.get("Row1") or {}
             return {
-                "RefSeq_Id": first_row.get("refseq_id"),
-                "UniProt": first_row.get("uniprot_id")
+                "RefSeq": first_row.get("refseq_id"),
+                "Uniprot-TrEMBL": first_row.get("uniprot_id")
             }
         # METABOLITE/PROTEIN case: flat dict in response
         elif isinstance(data, dict):
             return {
-                "KEGG": data.get("kegg_id"),
-                "PubChem": data.get("pubchem_cid"),
+                "KEGG Compound": data.get("kegg_id"),
+                "PubChem-compound": data.get("pubchem_cid"),
                 "HMDB": data.get("hmdb_id"),
                 "ChEBI": data.get("chebi_id"),
-                "RefSeq_Id": data.get("refseq_id"),
-                "UniProt": data.get("uniprot_id"),
+                "RefSeq": data.get("refseq_id"),
+                "Uniprot-TrEMBL": data.get("uniprot_id"),
                 "InChIKey": data.get("inchi_key"),
                 "InChI": data.get("inchi")
             }
@@ -165,8 +167,8 @@ def fetch_refseq_from_uniprot(query_id):
                 if xref.get("database") == "RefSeq":
                     refseq_ids.append(xref.get("id"))
             return {
-                "UniProt": uid,
-                "RefSeq_Id": ",".join(refseq_ids) if refseq_ids else "NaN"
+                "Uniprot-TrEMBL": uid,
+                "RefSeq": ",".join(refseq_ids) if refseq_ids else "NaN"
             }
         except Exception as e:
             logging.warning(f"UniProt no data for {query_id}: {e}")
@@ -214,9 +216,9 @@ def fetch_pubchem_info(query_id):
         hmdb_id = next((x for x in data_xrefs if x.startswith("HMDB")), None)
         lm_id = next((x for x in data_xrefs if x.startswith("LM")), None)
         return {
-            "PubChem": query_id,
-            "LipidMaps": lm_id,
-            "KEGG": kegg_id,
+            "PubChem-compound": query_id,
+            "LIPID MAPS": lm_id,
+            "KEGG Compound": kegg_id,
             "HMDB": hmdb_id,
             "ChEBI": chebi_id.split(":")[1] if chebi_id else None,
             "InChI": data_inchi.get("InChI"),
@@ -248,7 +250,6 @@ def integrate_crossrefs(lm_ids, uni_ids, pchem_cids):
         When multiple protein IDs are taken as UniProt input: [ID1;ID2],
         these are returned as [ID1_RefSeq_ID1, ID1_RefSeq_ID2;
                                ID2_RefSeq_ID1...].
-        Missing values are represented as NaN.
     """
     results = {}
     # Query LipidMaps DB (for LM ID)
@@ -265,7 +266,7 @@ def integrate_crossrefs(lm_ids, uni_ids, pchem_cids):
 
         for uid in uids:
             info = fetch_refseq_from_uniprot(uid)
-            refseq_raw = info.get("RefSeq_Id") if info else "NaN"
+            refseq_raw = info.get("RefSeq") if info else "NaN"
             if refseq_raw == "NaN":
                 refseq_results.append("NaN")
                 continue
@@ -275,8 +276,8 @@ def integrate_crossrefs(lm_ids, uni_ids, pchem_cids):
             refseq_results.append(",".join(clean))
         # Save results
         results[query_id] = {
-            "UniProt": query_id,
-            "RefSeq_Id": ";".join(refseq_results)
+            "Uniprot-TrEMBL": query_id,
+            "RefSeq": ";".join(refseq_results)
         }
     
     # Query PubChem for uncrossed numeric ids
@@ -330,10 +331,10 @@ def extract_ids(df):
         Array of shape (n, 2) containing ID and DataBase values.
     """
     # Normalize info in DataBase column -> pass to string and convert to lowercase
-    df["DataBase"] = df["DataBase"].astype(str).str.strip().str.lower()
+    df["DataBase_norm"] = df["DataBase"].astype(str).str.strip().str.lower()
 
     # Extract ID and DataBase columns
-    df_ids_db = df[["ID","DataBase"]]
+    df_ids_db = df[["ID","DataBase_norm"]]
     ids_db_list = df_ids_db.to_numpy()
     return ids_db_list
 
@@ -355,7 +356,7 @@ def classify_ids(ids_db_list):
     pchem_cids : list
         IDs recognized as PubChem CIDs.
     """
-    # Extract ID"s (column 0) where DataBase is matching
+    # Extract ID's (column 0) where DataBase is matching
     lm_ids = ids_db_list[np.isin(ids_db_list[:, 1], LM), 0]
     uni_ids =  ids_db_list[np.isin(ids_db_list[:, 1], UPROT), 0]
     pchem_cids = ids_db_list[np.isin(ids_db_list[:, 1], PCHEM), 0]
@@ -401,22 +402,20 @@ def duplicated_ids_check(df):
     """
     # Identify relevant DB columns from header
     databases = [col for col in df.columns if col.lower() in SUPPORTED_DBS]
+
     # keep rows where at least one DB column has a value
     df_valid = df[df[databases].notna().any(axis=1)]
+
     # Check duplicates across those columns
     mask = df_valid.duplicated(subset=databases, keep=False)
     dup_df = df_valid[mask]
+    
     # Extract duplicated IDs grouped per duplicate blocks
-    grouped = (
-        dup_df.groupby(databases)["ID"]
-        .apply(list)              # list of IDs in each duplicate cluster
-        .apply(lambda ids: "-".join(map(str, ids)))  # collapse IDs
-    )
-    # log output
-    for merged_ids in grouped:
+    if not dup_df.empty:
         logging.warning(
-            f"\n\t[ALERT]: Duplicated ID's present: [{merged_ids}]\n"
-        )
+            f"\n\t[ALERT]: Check the following duplicated ID's present:")
+        for id in dup_df["ID"]:
+            logging.info(f"\n\t\t\tDuplicate: {id}")
 
 
 ############################# READ/SAVE FILE ##################################
@@ -512,6 +511,8 @@ def main(input_file, output_folder):
     # Integrate and merge results
     df_results = integrate_crossrefs(lm_ids, uni_ids, pchem_cids)
     final_df = merge_df_with_crossrefs(df_all, df_results, header)
+
+    print(df_results.columns)
 
     # Check duplicated ids + Saving final df to tsv
     duplicated_ids_check(final_df)

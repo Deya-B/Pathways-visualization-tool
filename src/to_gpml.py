@@ -237,12 +237,12 @@ class Layout:
                 G.add_edge(inter.source.graph_id, inter.target.graph_id)
 
 
-        # See graph
-        labels = {n.graph_id: n.label for n in self.nodes.values()
-          if n.node_type != "GeneProduct"}
-        pos = nx.spring_layout(G)  # o cualquier layout
-        nx.draw(G, pos, labels=labels, node_color="lightblue", node_size=800, font_size=8)
-        plt.show()
+        # # See graph
+        # labels = {n.graph_id: n.label for n in self.nodes.values()
+        #   if n.node_type != "GeneProduct"}
+        # pos = nx.spring_layout(G)  # o cualquier layout
+        # nx.draw(G, pos, labels=labels, node_color="lightblue", node_size=800, font_size=8)
+        # plt.show()
 
 
 
