@@ -1,5 +1,5 @@
 # TODO: ADD Module docstring (what this file is about)
-import csv
+
 import datetime
 import re
 
@@ -20,6 +20,8 @@ import matplotlib.pyplot as plt
     # Cambiar default_anchor_pos = 0.6
 
 # TODO: add organs > make like groups
+
+# TODO: incorporar un yaml config file
 
 
 ################################ NODE #########################################
@@ -62,6 +64,18 @@ class Node:
         pass
 
 
+# TODO: Add CASE Node Type="Pathway" --- Need different XML generation:
+# From:
+#   <DataNode TextLabel="Enzyme 5" GraphId="e0005" Type="GeneProduct">
+#     <Graphics CenterX="408.0" CenterY="342.5" Width="106.0" Height="25.0" ZOrder="32768" FontSize="12" Valign="Middle" />
+#     <Xref Database="Ensembl" ID="ENSG00000012347" />
+#   </DataNode>
+# TO:
+#   <DataNode TextLabel="Testing Pathway Nodes" GraphId="ea958" Type="Pathway">
+#     <Graphics CenterX="516.5" CenterY="130.0" Width="161.0" Height="25.0" ZOrder="32768" FontWeight="Bold" FontSize="12" Valign="Middle" ShapeType="None" Color="14961e" />
+#     <Xref Database="WikiPathways" ID="WPxxx" />
+#   </DataNode>
+
     def to_gpml(self):
         "Serialize to XML"
         datanode = ET.Element("DataNode", {
@@ -78,10 +92,12 @@ class Node:
             "Valign": "Middle", 
             "Color": "0000ff" if self.node_type == "Metabolite" else "000000" 
         })
-        ET.SubElement(datanode, "Xref", {
-            "Database": self.database,
-            "ID": self.db_id
-        })
+        if self.database is not None:
+            ET.SubElement(datanode, "Xref", {
+                "Database": str(self.database),
+                "ID": str(self.db_id)
+            })
+        return datanode
     
 
 ############################## INTERACTION ####################################
@@ -104,87 +120,105 @@ class Interaction:
         self.source = source                
         self.target = target               
         self.type = (interaction_type or "").lower()
+        self.anchor_xy = None
+
 
     def bind_to_anchor(self, anchor_id, xy=None):
         self.target = anchor_id
             
 
     def to_gpml(self):
-    #     interaction = ET.Element("Interaction")
-    #     graphics = ET.SubElement(interaction, "Graphics", {"LineThickness": "1.0"})
+        """GPML for catalysis interactions."""
+        inter_el = ET.Element("Interaction", {
+            "GraphId": self.graph_id
+        })
+        graphics = ET.SubElement(inter_el, "Graphics", {
+            "LineThickness": "1.0"
+        })
 
-    #     if self.type.lower() == "conversion": 
-    #         # source point       
-    #         ET.SubElement(graphics, "Point", {    
-    #             "X": str(self.source.x),
-    #             "Y": str(self.source.y + self.source.height/2.0), # lower edge of the origin node              
-    #             "GraphRef": self.source.graph_id, "RelX": "0.0", "RelY": "1.0"
-    #         })
-    #                                                     # NOTE: Attachment point: 
-    #                                                         # left edge: (-1, 0) 
-    #                                                         # right: (1, 0)
-    #                                                         # top: (0, -1) 
-    #                                                         # bottom: (0, 1)
-    #         # target point
-    #         ET.SubElement(graphics, "Point", {
-    #             "X": str(self.target.x),
-    #             "Y": str(self.target.y- self.target.height/2.0), # top edge of the destination node               
-    #             "GraphRef": self.target.graph_id, "RelX": "0.0", "RelY": "-1.0",
-    #             "ArrowHead": "mim-conversion"
-    #         })
-            
-    #         # anchor with GraphId (to reference from Catalysis)
-    #         if self.anchor_id is None:
-    #             self.anchor_id = idgenerator.new("anchor")
-    #         if self._anchor_xy is None:
-    #             self.compute_anchor_xy()
-    #         ax, ay = self._anchor_xy    # anchor point coords                                          
-    #         ET.SubElement(graphics, "Anchor", {
-    #             "GraphId": self.anchor_id, 
-    #             "Position": str(self.anchor_pos), "Shape": "None"
-    #         })
-
-    #     elif self.type.lower() == "catalysis": 
-    #         # destination=ANCHOR of a conversion
-    #         axay = self.anchor_xy
-    #         ax, ay = axay if axay else (self.source.x, self.source.y)
-
-
-    #         def side_relxy(node, tx, ty):
-    #             """Compute nearest side of enzyme to select the source for its arrow"""
-    #             dx, dy = tx - node.x, ty - node.y
-    #             if abs(dx) > abs(dy):
-    #                 # left/right
-    #                 return (-1.0, 0.0) if dx < 0 else (1.0, 0.0)  # left or right edge
-    #             else:
-    #                 # top/bottom
-    #                 return (0.0, -1.0) if dy < 0 else (0.0, 1.0)  # top or bottom edge
+        if self.type == "mim-catalysis":
+            enz = self.source       # Node = GeneProduct
+            anchor_id = self.target
+            ex, ey = enz.x, enz.y   # Enzyme coordinates
         
-    #         rx, ry = side_relxy(self.source, ax, ay) # enzyme side
+            # Origin point: enzyme (center)
+            ET.SubElement(graphics, "Point", {
+                "X": str(ex),
+                "Y": str(ey),
+                "GraphRef": enz.graph_id,
+                "RelX": "0.0",
+                "RelY": "0.0"
+            })
+            # Destination point: anchor (only GraphRef=anchor_id, without X/Y)
+            ax, ay = self.anchor_xy if self.anchor_xy is not None else (ex, ey)
+            ET.SubElement(graphics, "Point", {
+                "X": str(ax),
+                "Y": str(ay),
+                "GraphRef": anchor_id,
+                "RelX": "0.0",
+                "RelY": "0.0",
+                "ArrowHead": "mim-catalysis"
+            })
 
-    #         # origin at chosen side of enzyme
-    #         ET.SubElement(graphics, "Point", {    
-    #             "X": str(self.source.x), "Y": str(self.source.y),          
-    #             "GraphRef": self.source.graph_id, 
-    #             "RelX": str(rx), "RelY": str(ry)
-    #         })
-    #         # end at the anchor (GraphRef=anchor_id)
-    #         ET.SubElement(graphics, "Point", {
-    #             "X": str(ax), "Y": str(ay),
-    #             "GraphRef": self.anchor_id, "RelX": "0.0", "RelY": "0.0",
-    #             "ArrowHead": "mim-catalysis"
-    #         })
+        ET.SubElement(inter_el, "Xref", {"Database": "", "ID":""})
+        return inter_el
 
-    #     ET.SubElement(interaction, "Xref", {"Database": "", "ID":""})
-    #     return interaction
-        pass
     
 class ConversionInteraction(Interaction):
     def __init__(self, source, target, anchor_pos=None, anchor_id=None):
         super().__init__(source, target, "mim-conversion")
-        self.anchor_id = None
-        self._anchor_xy = None # private: to be computed ONLY if coordinates exist
-        self.anchor_pos = 0.4
+        self.anchor_id = anchor_id
+        self._anchor_xy = None # private: to be computed by Layout class
+        self.anchor_pos = anchor_pos if anchor_pos is not None else 0.4
+
+
+    def to_gpml(self):
+        """GPML for an anchored conversion."""
+        inter_el = ET.Element("Interaction", {
+            "GraphId": self.graph_id
+        })
+        graphics = ET.SubElement(inter_el, "Graphics", {
+            "LineThickness": "1.0"
+        })
+        
+# NOTE: Attachment point: 
+    # left edge: (-1, 0) 
+    # right: (1, 0)
+    # top: (0, -1) 
+    # bottom: (0, 1)
+        # Source point (Lower edge of origin node)
+        sx = self.source.x
+        sy = self.source.y + self.source.height / 2.0   
+                                                         
+        ET.SubElement(graphics, "Point", {    
+                "X": str(sx),
+                "Y": str(sy),              
+                "GraphRef": self.source.graph_id, 
+                "RelX": "0.0", 
+                "RelY": "1.0"
+        })                                              
+        # Target point (Top edge of the destination node)
+        tx = self.target.x
+        ty = self.target.y - self.target.height / 2.0
+        ET.SubElement(graphics, "Point", {
+            "X": str(tx),
+            "Y": str(ty), 
+            "GraphRef": self.target.graph_id, 
+            "RelX": "0.0", 
+            "RelY": "-1.0",
+            "ArrowHead": "mim-conversion"
+        })
+            
+        # Anchor with GraphId: uses anchor_id and anchor_pos already 
+        #   calculated in Layout                                         
+        ET.SubElement(graphics, "Anchor", {
+            "GraphId": self.anchor_id, 
+            "Position": str(self.anchor_pos), 
+            "Shape": "None"
+        })
+
+        ET.SubElement(inter_el, "Xref", {"Database": "", "ID":""})
+        return inter_el
 
 
 ###################### Layout/Board CONFIGURATION #############################
@@ -201,6 +235,8 @@ class Layout:
     def __init__(self, nodes, interactions):
         self.nodes = nodes                # Dict of nodes, keyed by graph_id
         self.interactions = interactions  # List of Interactions
+        self.boardwidth = None
+        self.boardheight = None
         self._laid_out = False
 
 
@@ -292,7 +328,7 @@ class Layout:
 
     def layout_catalysis(self):
         """Place enzyme nodes at their anchors once catalysis interactions exist."""
-        # Build anchor lookup: anchor_id -> anchor_xy for conversions
+        # Build anchor lookup: anchor_id -> anchor_xy from conversion inter
         anchor_xy_dict = {     
             inter.anchor_id: inter._anchor_xy
             for inter in self.interactions
@@ -308,6 +344,7 @@ class Layout:
                 if anchor_id in anchor_xy_dict and enz is not None:
                     ax, ay = anchor_xy_dict[anchor_id]
                     enz.coords(ax, ay) # place enzyme exactly at anchor
+                    inter.anchor_xy = (ax, ay)
             
         # Compute the FINAL board size now that everyone has coords
         # self._compute_board_size()
@@ -379,8 +416,6 @@ class Parser:
         if match.empty:
             return None
         info = match.iloc[0]
-        # is_pathway = is_wikipathways(node_id) or is_kegg(node_id)
-        # node_type = "Pathway" if is_pathway else "Metabolite"
         is_pathway_flag = self._is_pathway(node_id)
         node_type = "Pathway" if is_pathway_flag else "Metabolite"
 
@@ -453,7 +488,6 @@ class Parser:
 # PASAR A AQUÍ todo LO RELATIVO AL XML...
     # Gather all your nodes/interactions from TSVParser
     # Build the XML tree using their to_gpml() methods
-    # Optionally assign coordinates/layout here
 
     # header creation
     # mapping nodes → XML
@@ -463,11 +497,60 @@ class Parser:
     # naming/organism metadata
     # consistency
 
+class XMLBuilder:  
+    def __init__(self, title, organism=None, nodes=None, interactions=None):
+        self.title = title
+        self.organism = organism
+        self._laid_out = False 
+        self.nodes = nodes or {}             # Node label
+        self._nodes_by_id = {}      # Node graph_id
+        self.interactions = interactions or []
+        # conversion mappings -> pending anchor and catalysis
+        # self._conv_key_to_inter = {}     # (src_label, tgt_label) -> Interaction(conversion) 
+        # self._conv_key_to_catalysts = {} # (src_label, tgt_label) -> [enzyme_labels]
+
+
+    def to_etree(self):
+        root = self.xml_header()
+
+        # A) Nodes
+        for node in self.nodes.values(): # iterar por los objetos Node
+            # if node.x is None or node.y is None:
+            #     raise ValueError(f"Nodo sin coordenadas: {node.label}")
+            root.append(node.to_gpml())
+
+        # B) Interactions
+        for inter in self.interactions:
+            root.append(inter.to_gpml())
+
+        # C) InfoBox & Biopax xml finishing lines
+        ET.SubElement(root, "InfoBox", {"CenterX": "0.0", "CenterY": "0.0"})
+        ET.SubElement(root, "Biopax")
+        return root
+    
+
+    # def xml_beginning(self, board_w, board_h):
+    def xml_header(self):
+        root = ET.Element("Pathway", {
+            "xmlns": "http://pathvisio.org/GPML/2013a",
+            "Name": self.title,
+            "Version": datetime.date.today().isoformat(),
+            "Organism": self.organism
+        })
+        ET.SubElement(root, "Graphics", {
+                    # "BoardWidth": f"{board_w:.1f}", 
+                    # "BoardHeight": f"{board_h:.1f}"})
+                    "BoardWidth": "100", 
+                    "BoardHeight": "100"
+        })
+        return root
     
 
 ################################ MAIN #########################################
 
-def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", ):
+def main(pathway_title, organism, 
+         ID_data_file, relations_file, output_filename, 
+         delimiter="\t"):
     # DataFrames from Data and Relations files
     id_data_df = pd.read_csv(ID_data_file, sep=delimiter, encoding="utf-8")
     relations_df = pd.read_csv(relations_file, sep=delimiter, encoding="utf-8")
@@ -496,11 +579,26 @@ def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", 
                 catalysis_list.append(catal)
     layout.layout_catalysis() # place enzymes
 
+    # Build GPML
+    xml_builder = XMLBuilder(
+        title=pathway_title,
+        organism=organism,
+        nodes=builder.nodes,
+        interactions=builder.interactions
+    )
+    tree = ET.ElementTree(xml_builder.to_etree())
     
+    try:
+        ET.indent(tree, space="  ") 
+    except AttributeError:
+        pass
+    tree.write(output_filename, encoding="utf-8", xml_declaration=True)
+
+
 
     # Checkers
-    for key, node in builder.nodes.items():
-        print(f"{key}: {vars(node)}")  # vars() returns the attributes as a dict
+    # for key, node in builder.nodes.items():
+    #     print(f"{key}: {vars(node)}")  # vars() returns the attributes as a dict
 
     # for inter in conversions_list:
     #     source_label = inter.source.graph_id if inter.source else "None"
@@ -511,20 +609,6 @@ def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", 
     #     source_label = inter.source.graph_id if inter.source else "None"
     #     target_label = inter.target
     #     print(f"{source_label} → {target_label}: {vars(inter)}")
-
-
-########################### HELPER FUNCIONS ###################################
-
-
-def is_wikipathways(id_str):
-    """Check if source/target ID match Pathway WikiPathways database, 
-    which can have the form WP1234, WP12345_r2, for example"""
-    return re.match(r'WP\d{1,5}(_r\d+)?$', str(id_str)) is not None
-
-def is_kegg(id_str):
-    """Check if source/target ID match Pathway WikiPathways database, 
-    which has the form hsa00120, for example"""
-    return re.match(r'^[a-zA-Z]{2,4}\d{5}$', str(id_str)) is not None
 
 
 ############################ ID GENERATOR #####################################
@@ -571,14 +655,17 @@ idgenerator = IDGenerator()
 if __name__ == "__main__":
     # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
     # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
+    # output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
     #home
     ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
     relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
+    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/ruta.gpml"
     
     pathway_title = "Secondary BA Synthesis (CA-Based reactions)"
     organism = "Homo sapiens, Mus-musculus"
 
-    main(pathway_title, organism, ID_data_file, relations_file)
+    main(pathway_title, organism, 
+         ID_data_file, relations_file, output_filename)
 
 
 
@@ -600,3 +687,8 @@ if __name__ == "__main__":
     #   DataBase ID, DataBase Name, Component Name
     # IMPORTANT: Every ID from the relations file must be also present in 
     #   the ID_data_file provided. Otherwise this wont appear in the pathway.
+
+# Pathway node must be defined somewhere
+
+# ET.indent(tree, space="  "), part of xml.etree.ElementTree requires 
+#   Python ≥ 3.9 to work
