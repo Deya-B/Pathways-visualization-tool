@@ -245,7 +245,6 @@ class Layout:
         # plt.show()
 
 
-
         # BFS layering, get a list of rows with the topology           
         has_nodes = G.number_of_nodes() > 0
         if has_nodes: # creates lists of nodes by depth from a root/start node
@@ -339,6 +338,33 @@ class Parser:
             self.relations_df.columns[0:3])
 
 
+    def _is_pathway(self, node_id):
+        """
+        Devuelve True si:
+        - El ID tiene formato WikiPathways (WP5176, WP12345_r2, etc.), o
+        - El ID tiene formato KEGG Pathway (hsa00120, map00121, etc.), o
+        - En la columna db_col correspondiente a ese ID aparece la palabra
+            'pathway'.
+        """
+        if pd.isnull(node_id):
+            return False
+        
+        # WikiPathways: WP + 4-5 dígitos + opcional _rN
+        if re.fullmatch(r"WP\d{4,5}(?:_r\d+)?", str(node_id)):
+            return True
+
+        # KEGG Pathway típico: 3 letras (organismo) + 5 dígitos
+        if re.fullmatch(r"[a-z]{3}\d{5}", str(node_id)):
+            return True
+
+        # Buscar el registro en el DataFrame
+        match = self.id_data_df[self.id_data_df[self.id_col] == node_id]
+        if match.empty:
+            return False
+        db_value = str(match.iloc[0][self.db_col])
+        return "pathway" in db_value.lower() # Contiene "pathway"
+        
+
     def _get_create_node (self, node_id):
         """For source and target nodes"""
         if pd.isnull(node_id):
@@ -353,8 +379,10 @@ class Parser:
         if match.empty:
             return None
         info = match.iloc[0]
-        is_pathway = is_wikipathways(node_id) or is_kegg(node_id)
-        node_type = "Pathway" if is_pathway else "Metabolite"
+        # is_pathway = is_wikipathways(node_id) or is_kegg(node_id)
+        # node_type = "Pathway" if is_pathway else "Metabolite"
+        is_pathway_flag = self._is_pathway(node_id)
+        node_type = "Pathway" if is_pathway_flag else "Metabolite"
 
         # Extract info from tabular data and transform into a Node object
         node = Node(node_type, info[self.name_col], info[self.db_col], node_id)
@@ -364,7 +392,7 @@ class Parser:
         self.db_index[node_id] = node.graph_id        
 
         return node
- 
+
 
     def build_conversions(self, row):
         # Obtain source and target ID
@@ -471,8 +499,8 @@ def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", 
     
 
     # Checkers
-    # for key, node in builder.nodes.items():
-    #     print(f"{key}: {vars(node)}")  # vars() returns the attributes as a dict
+    for key, node in builder.nodes.items():
+        print(f"{key}: {vars(node)}")  # vars() returns the attributes as a dict
 
     # for inter in conversions_list:
     #     source_label = inter.source.graph_id if inter.source else "None"
@@ -486,6 +514,7 @@ def main(pathway_title, organism, ID_data_file, relations_file, delimiter="\t", 
 
 
 ########################### HELPER FUNCIONS ###################################
+
 
 def is_wikipathways(id_str):
     """Check if source/target ID match Pathway WikiPathways database, 
