@@ -49,7 +49,7 @@ class Node:
         self.db_id = db_id
         self.graph_id = idgenerator.new(self.node_type)
         self.x, self.y = None, None
-        self.width = 90.0 + len(self.label) * 4
+        self.width = 90.0 + len(self.label) * 3
         self.height = 25.0
     
     
@@ -178,15 +178,16 @@ class ConversionInteraction(Interaction):
             "GraphId": self.graph_id
         })
         graphics = ET.SubElement(inter_el, "Graphics", {
+            "ConnectorType": "Elbow",
             "LineThickness": "1.0"
         })
         
-# NOTE: Attachment point: 
-    # left edge: (-1, 0) 
-    # right: (1, 0)
-    # top: (0, -1) 
-    # bottom: (0, 1)
         # Source point (Lower edge of origin node)
+        # NOTE: Attachment point: 
+                # left edge: (-1, 0) 
+                # right: (1, 0)
+                # top: (0, -1) 
+                # bottom: (0, 1)
         sx = self.source.x
         sy = self.source.y + self.source.height / 2.0   
                                                          
@@ -653,13 +654,13 @@ idgenerator = IDGenerator()
 ############################# ENTRY POINT #####################################
 
 if __name__ == "__main__":
-    # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
-    # output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
+    ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
+    output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
     #home
-    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
-    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/ruta.gpml"
+    # ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    # relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
+    # output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/ruta.gpml"
     
     pathway_title = "Secondary BA Synthesis (CA-Based reactions)"
     organism = "Homo sapiens, Mus-musculus"
