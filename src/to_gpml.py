@@ -42,8 +42,10 @@ import matplotlib.pyplot as plt
 
 class Node:
 
-    def __init__(self, node_type, label, database, db_id):
-        self.node_type = node_type  
+    def __init__(self, node_type, label, database, db_id, colour):
+        self.node_type = node_type
+        self.colour = colour
+        self.font_weight = None
         self.label = label
         self.database = database
         self.db_id = db_id
@@ -75,6 +77,8 @@ class Node:
 #     <Graphics CenterX="516.5" CenterY="130.0" Width="161.0" Height="25.0" ZOrder="32768" FontWeight="Bold" FontSize="12" Valign="Middle" ShapeType="None" Color="14961e" />
 #     <Xref Database="WikiPathways" ID="WPxxx" />
 #   </DataNode>
+    
+# "0000ff" if self.node_type == "Metabolite" else "000000" 
 
     def to_gpml(self):
         "Serialize to XML"
@@ -88,9 +92,14 @@ class Node:
             "CenterY": str(self.y),
             "Width": str(self.width),
             "Height": str(self.height),
+            "FontWeight": "Normal" if self.node_type == "Metabolite" 
+                                   or self.node_type == "GeneProduct" 
+                                   else "Bold",
             "FontSize": "12",
+            "ShapeType": "None" if self.node_type == "Pathway" 
+                                else "Rectangle",
             "Valign": "Middle", 
-            "Color": "0000ff" if self.node_type == "Metabolite" else "000000" 
+            "Color": str(self.colour)
         })
         if self.database is not None:
             ET.SubElement(datanode, "Xref", {
@@ -98,7 +107,7 @@ class Node:
                 "ID": str(self.db_id)
             })
         return datanode
-    
+
 
 ############################## INTERACTION ####################################
 ## Description:
@@ -113,8 +122,7 @@ class Node:
         # anchor_xy: calculate anchor coords (to be computed ONLY if coordinates exist)
 ## Methods:
 
-class Interaction: 
-    default_anchor_pos = 0.4
+class Interaction:
     def __init__(self, source, target, interaction_type):
         self.graph_id = idgenerator.new("interaction")
         self.source = source                
@@ -165,11 +173,11 @@ class Interaction:
 
     
 class ConversionInteraction(Interaction):
-    def __init__(self, source, target, anchor_pos=None, anchor_id=None):
+    def __init__(self, source, target, anchor_id=None):
         super().__init__(source, target, "mim-conversion")
         self.anchor_id = anchor_id
         self._anchor_xy = None # private: to be computed by Layout class
-        self.anchor_pos = anchor_pos if anchor_pos is not None else 0.4
+        self.anchor_pos = 0.5
 
 
     def to_gpml(self):
@@ -225,10 +233,8 @@ class ConversionInteraction(Interaction):
 ###################### Layout/Board CONFIGURATION #############################
 
 BOARD_MARGIN = 100.0    # margin around everything
-LAYER_GAP = 100.0       # vertical separation between BFS layers
-COL_GAP = 140.0         # approximate horizontal separation
-ENZYME_OFFSET = 0.0     # distance from the anchor to the enzyme
-ENZYME_STACK_GAP = 60.0 # separation between multiple enzymes on the same anchor
+LAYER_GAP = 120.0       # vertical separation between BFS layers
+COL_GAP = 200.0         # approximate horizontal separation
 
 ############################# LAYOUT CREATION #################################
 
@@ -401,7 +407,7 @@ class Parser:
             return False
         db_value = str(match.iloc[0][self.db_col])
         return "pathway" in db_value.lower() # Contiene "pathway"
-        
+    
 
     def _get_create_node (self, node_id):
         """For source and target nodes"""
@@ -419,9 +425,10 @@ class Parser:
         info = match.iloc[0]
         is_pathway_flag = self._is_pathway(node_id)
         node_type = "Pathway" if is_pathway_flag else "Metabolite"
-
+        colour = self.get_node_colour(node_type)
+        
         # Extract info from tabular data and transform into a Node object
-        node = Node(node_type, info[self.name_col], info[self.db_col], node_id)
+        node = Node(node_type, info[self.name_col], info[self.db_col], node_id, colour)
         self.nodes[node.graph_id] = node
 
         # Record that this metabolite is already mapped
@@ -457,7 +464,8 @@ class Parser:
             return None
         
         info = match.iloc[0]
-        node = Node("GeneProduct", info[self.name_col], info[self.db_col], catal_id)
+        colour = self.get_node_colour("GeneProduct")
+        node = Node("GeneProduct", info[self.name_col], info[self.db_col], catal_id, colour)
         self.nodes[node.graph_id] = node
 
         return node
@@ -484,6 +492,17 @@ class Parser:
         return catal_inter
 
 
+    def get_node_colour(self, node_type):
+        """Get XML Graphics standards stablished by WikiPathways for the 
+        different node types"""
+        if node_type == "Metabolite": 
+            return "0000ff"
+        elif node_type == "Pathway": 
+            return "14961e"
+        else: # For Enzymes and others
+            return "000000"
+
+            
 ############################### XML build #####################################
 
 # PASAR A AQUÍ todo LO RELATIVO AL XML...
@@ -506,9 +525,6 @@ class XMLBuilder:
         self.nodes = nodes or {}             # Node label
         self._nodes_by_id = {}      # Node graph_id
         self.interactions = interactions or []
-        # conversion mappings -> pending anchor and catalysis
-        # self._conv_key_to_inter = {}     # (src_label, tgt_label) -> Interaction(conversion) 
-        # self._conv_key_to_catalysts = {} # (src_label, tgt_label) -> [enzyme_labels]
 
 
     def to_etree(self):
@@ -654,13 +670,13 @@ idgenerator = IDGenerator()
 ############################# ENTRY POINT #####################################
 
 if __name__ == "__main__":
-    ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
-    output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
+    # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
+    # output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
     #home
-    # ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    # relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
-    # output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/ruta.gpml"
+    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
+    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/ruta.gpml"
     
     pathway_title = "Secondary BA Synthesis (CA-Based reactions)"
     organism = "Homo sapiens, Mus-musculus"
