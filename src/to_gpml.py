@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 
 # TODO: add organs > make like groups
 
-# TODO: incorporar un yaml config file
+# TODO: incorporate a yaml config file
 
 
 ################################ NODE #########################################
@@ -65,20 +65,6 @@ class Node:
         self.x, self.y = float(x), float(y)
         pass
 
-
-# TODO: Add CASE Node Type="Pathway" --- Need different XML generation:
-# From:
-#   <DataNode TextLabel="Enzyme 5" GraphId="e0005" Type="GeneProduct">
-#     <Graphics CenterX="408.0" CenterY="342.5" Width="106.0" Height="25.0" ZOrder="32768" FontSize="12" Valign="Middle" />
-#     <Xref Database="Ensembl" ID="ENSG00000012347" />
-#   </DataNode>
-# TO:
-#   <DataNode TextLabel="Testing Pathway Nodes" GraphId="ea958" Type="Pathway">
-#     <Graphics CenterX="516.5" CenterY="130.0" Width="161.0" Height="25.0" ZOrder="32768" FontWeight="Bold" FontSize="12" Valign="Middle" ShapeType="None" Color="14961e" />
-#     <Xref Database="WikiPathways" ID="WPxxx" />
-#   </DataNode>
-    
-# "0000ff" if self.node_type == "Metabolite" else "000000" 
 
     def to_gpml(self):
         "Serialize to XML"
@@ -280,7 +266,7 @@ class Layout:
                 G.add_edge(inter.source.graph_id, inter.target.graph_id)
 
 
-        # # See graph
+        # See graph
         # labels = {n.graph_id: n.label for n in self.nodes.values()
         #   if n.node_type != "GeneProduct"}
         # pos = nx.spring_layout(G)  # o cualquier layout
@@ -674,11 +660,11 @@ if __name__ == "__main__":
     # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
     # output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
     #home
-    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
+    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/1-Alternative-Acidic_BA_updated.tsv"
     relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
-    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/ruta.gpml"
+    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/Alternative.gpml"
     
-    pathway_title = "Secondary BA Synthesis (CA-Based reactions)"
+    pathway_title = "Alternative/Acidic BA biosynthesis pathway"
     organism = "Homo sapiens, Mus-musculus"
 
     main(pathway_title, organism, 
