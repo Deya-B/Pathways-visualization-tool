@@ -1,6 +1,3 @@
-# python DB_crosslink.py 
-#       -i C:\Users\deyan\Desktop\BIOINFORMATICA\1TFM\pathways_raw 
-#       -o C:\Users\deyan\Desktop\BIOINFORMATICA\1TFM\pathways_updated
 ###############################################################################
 #        Cross-referencing pipeline (LipidMaps / PubChem / UniProt)           # 
 ###############################################################################
@@ -168,7 +165,7 @@ def fetch_refseq_from_uniprot(query_id):
                     refseq_ids.append(xref.get("id"))
             return {
                 "Uniprot-TrEMBL": uid,
-                "RefSeq": ",".join(refseq_ids) if refseq_ids else "NaN"
+                "RefSeq": ",".join(refseq_ids) if refseq_ids else ""
             }
         except Exception as e:
             logging.warning(f"UniProt no data for {query_id}: {e}")
@@ -266,9 +263,9 @@ def integrate_crossrefs(lm_ids, uni_ids, pchem_cids):
 
         for uid in uids:
             info = fetch_refseq_from_uniprot(uid)
-            refseq_raw = info.get("RefSeq") if info else "NaN"
-            if refseq_raw == "NaN":
-                refseq_results.append("NaN")
+            refseq_raw = info.get("RefSeq") if info else ""
+            if refseq_raw == "":
+                refseq_results.append("")
                 continue
             # Obtain RefSeq parts and remove sufixes
             refseq_raw_parts = [p.strip() for p in refseq_raw.split(",") if p.strip()]
@@ -433,10 +430,16 @@ def read(input_file):
     df_all : pandas.DataFrame
         Parsed DataFrame with empty rows removed.
     """
-    df_all = (
-        pd.read_csv(input_file, sep="\t", encoding="utf_8")
-        .dropna(axis=0, how="all")
-        )
+    try:
+        df_all = (
+            pd.read_csv(input_file, sep="\t", encoding="utf-8")
+            .dropna(axis=0, how="all")
+            )
+    except UnicodeDecodeError:
+        df_all = (
+            pd.read_csv(input_file, sep="\t", encoding="utf-16")
+            .dropna(axis=0, how="all")
+            )
     return df_all
 
 
@@ -511,8 +514,6 @@ def main(input_file, output_folder):
     # Integrate and merge results
     df_results = integrate_crossrefs(lm_ids, uni_ids, pchem_cids)
     final_df = merge_df_with_crossrefs(df_all, df_results, header)
-
-    print(df_results.columns)
 
     # Check duplicated ids + Saving final df to tsv
     duplicated_ids_check(final_df)
