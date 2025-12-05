@@ -15,14 +15,9 @@ import matplotlib.pyplot as plt
     # * For classes: what it represents + key attrs
     # * For methods: what it does, args, returns, side-effects
 
-# TODO: add elbows
-    # In "mim-conversion" add ConnectorType = "Elbow"
-    # Cambiar default_anchor_pos = 0.6
-
 # TODO: add organs > make like groups
-
 # TODO: incorporate a yaml config file
-
+# TODO: incorporate hypothetical/multi-step reaction
 
 ################################ NODE #########################################
 ## Description:
@@ -51,7 +46,7 @@ class Node:
         self.db_id = db_id
         self.graph_id = idgenerator.new(self.node_type)
         self.x, self.y = None, None
-        self.width = 90.0 + len(self.label) * 3
+        self.width = 80.0 + (len(self.label) * 4)
         self.height = 25.0
     
     
@@ -218,9 +213,9 @@ class ConversionInteraction(Interaction):
 
 ###################### Layout/Board CONFIGURATION #############################
 
-BOARD_MARGIN = 100.0    # margin around everything
+BOARD_MARGIN = 200.0    # margin around everything
 LAYER_GAP = 120.0       # vertical separation between BFS layers
-COL_GAP = 200.0         # approximate horizontal separation
+COL_GAP = 250.0         # approximate horizontal separation
 
 ############################# LAYOUT CREATION #################################
 
@@ -239,6 +234,7 @@ class Layout:
         source = interactions.source
         target = interactions.target
 
+        # bottom border of source and top border of target
         x1 = source.x; y1 = source.y + source.height / 2.0
         x2 = target.x; y2 = target.y - target.height / 2.0
 
@@ -247,6 +243,7 @@ class Layout:
 
         if interactions.anchor_id is None:
             interactions.anchor_id = idgenerator.new("anchor")
+
         return (ax, ay)
 
 
@@ -294,7 +291,7 @@ class Layout:
             k = len(layer_nodes) # number of nodes in this layer
             span = max(0, (k - 1) * COL_GAP) # row width for this layer
             start_x = BOARD_MARGIN + (span_max - span) / 2.0 # center this row  under the widest row
-            y = BOARD_MARGIN + ly * LAYER_GAP # y-position for this row
+            y = 80 + ly * LAYER_GAP # y-position for this row
         
         # Step 3 - Assign positions to the nodes
             for i, graph_id in enumerate(layer_nodes):
@@ -338,9 +335,6 @@ class Layout:
                     ax, ay = anchor_xy_dict[anchor_id]
                     enz.coords(ax, ay) # place enzyme exactly at anchor
                     inter.anchor_xy = (ax, ay)
-            
-        # Compute the FINAL board size now that everyone has coords
-        # self._compute_board_size()
 
 
 ############################## BUILDER CLASSES ################################
@@ -589,6 +583,7 @@ def main(pathway_title, organism,
         nodes=builder.nodes,
         interactions=builder.interactions
     )
+    root = xml_builder.to_etree()
     tree = ET.ElementTree(xml_builder.to_etree())
     
     try:
@@ -661,8 +656,8 @@ if __name__ == "__main__":
     # output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
     #home
     ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/1-Alternative-Acidic_BA_updated.tsv"
-    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
-    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/Alternative.gpml"
+    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships2.tsv"
+    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/Alternative-NoDupsElbows.gpml"
     
     pathway_title = "Alternative/Acidic BA biosynthesis pathway"
     organism = "Homo sapiens, Mus-musculus"
