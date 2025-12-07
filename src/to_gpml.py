@@ -18,6 +18,8 @@ import matplotlib.pyplot as plt
 # TODO: add organs > make like groups
 # TODO: incorporate a yaml config file
 # TODO: incorporate hypothetical/multi-step reaction
+# TODO: incorporate reading of 2 or more ID's from ID col, ex:A7B3K3;C8WMP0
+
 
 ################################ NODE #########################################
 ## Description:
@@ -549,8 +551,8 @@ def main(pathway_title, organism,
          ID_data_file, relations_file, output_filename, 
          delimiter="\t"):
     # DataFrames from Data and Relations files
-    id_data_df = pd.read_csv(ID_data_file, sep=delimiter, encoding="utf-8")
-    relations_df = pd.read_csv(relations_file, sep=delimiter, encoding="utf-8")
+    id_data_df = pd.read_csv(ID_data_file, sep=delimiter, encoding="cp1252")
+    relations_df = pd.read_csv(relations_file, sep=delimiter, encoding="cp1252")
 
     # Parse DF and get node and interaction objects
     builder = Parser(id_data_df, relations_df)
@@ -655,12 +657,14 @@ if __name__ == "__main__":
     # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
     # output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
     #home
-    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/1-Alternative-Acidic_BA_updated.tsv"
-    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships2.tsv"
-    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/Alternative-NoDupsElbows.gpml"
+    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/4-Secondary_BA_Synthesis_MouseOnly_updated.tsv"
+    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
+    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/SecondaryBA-Murine_CDCA.gpml"
     
-    pathway_title = "Alternative/Acidic BA biosynthesis pathway"
-    organism = "Homo sapiens, Mus-musculus"
+    pathway_title = "Murine CDCA - MCA/MDCA pathway: bile salt deconjugation, secondary bile acid synthesis, reconjugation and sulfation "
+                 ## "CA-based bile salt deconjugation, secondary BA synthesis, reconjugation and sulfation" 
+                 ## "Alternative/Acidic BA biosynthesis pathway"
+    organism = "Mus-musculus" ## "Homo sapiens"
 
     main(pathway_title, organism, 
          ID_data_file, relations_file, output_filename)

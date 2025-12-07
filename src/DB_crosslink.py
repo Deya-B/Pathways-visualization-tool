@@ -536,3 +536,5 @@ if __name__ == "__main__":
     for file in tsv_files:
         INPUT_FILE = os.path.join(INPUT_FOLDER, file)
         main(INPUT_FILE, OUTPUT_FOLDER)
+
+# python DB_crosslink.py -i C:\Users\deyan\Desktop\BIOINFORMATICA\1TFM\pathways_raw -o C:\Users\deyan\Desktop\BIOINFORMATICA\1TFM\pathways_updated
