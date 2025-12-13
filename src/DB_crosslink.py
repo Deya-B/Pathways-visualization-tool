@@ -464,7 +464,7 @@ def save(base_filename, output_folder, final_df):
         os.makedirs(output_folder)
     base_filename_upd = base_filename.replace(".tsv", "_updated.tsv")
     output_path = os.path.join(output_folder,base_filename_upd)
-    final_df.to_csv(output_path, sep="\t", index=False)
+    final_df.to_csv(output_path, sep="\t", index=False, encoding="utf-8")
     return None
 
 
