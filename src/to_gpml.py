@@ -7,7 +7,6 @@ import pandas as pd
 from collections import defaultdict
 import xml.etree.ElementTree as ET  # create and manipulate XML structures
 import networkx as nx
-import matplotlib.pyplot as plt
 
 
 # TODO: Add PEP 257 style (https://peps.python.org/pep-0257/) Docstrings 
@@ -19,6 +18,7 @@ import matplotlib.pyplot as plt
 # TODO: incorporate a yaml config file
 # TODO: incorporate hypothetical/multi-step reaction
 # TODO: incorporate reading of 2 or more ID's from ID col, ex:A7B3K3;C8WMP0
+# TODO: aggregate edges involving colapsed nodes
 
 
 ################################ NODE #########################################

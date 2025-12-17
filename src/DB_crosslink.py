@@ -119,6 +119,7 @@ def fetch_lipidmaps_info(query_id):
         # METABOLITE/PROTEIN case: flat dict in response
         elif isinstance(data, dict):
             return {
+                "Sum Composition": data.get("abbrev"),
                 "KEGG Compound": data.get("kegg_id"),
                 "PubChem-compound": data.get("pubchem_cid"),
                 "HMDB": data.get("hmdb_id"),
