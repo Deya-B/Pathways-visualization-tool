@@ -22,20 +22,6 @@ import networkx as nx
 
 
 ################################ NODE #########################################
-## Description:
-    # GPML DataNode (metabolite, pathway or enzyme). 
-    # Contains the Node properties.
-## Attributes:
-        # node_type: Semantic type. "Metabolite" "Pathway" or "GeneProduct"
-        # label: Display text
-        # database: Xref DB name
-        # db_id: Xref ID
-        # graph_id: Unique GraphId in GPML.
-        # x, y: Center coordinates (PathVisio uses centers)
-        # width, height: Node box size in pixels
-## Methods:
-        # coords: Set center coordinates
-        # to_gpml: convert data to GPML
 
 class Node:
 
@@ -93,17 +79,6 @@ class Node:
 
 
 ############################## INTERACTION ####################################
-## Description:
-    # Represents conversions or catalysis from nodes
-    # Computes anchors for catalytic reactions
-## Attributes:
-        # source: Source Node
-        # target: Target Node: if target=conversion | None: if target=anchor
-        # type: interaction type (conversion, catalysis...)
-        # anchor_pos: (default_anchor_pos = 0.4) position for the anchor
-        # anchor_id: set for conversion > used as a destination in catalysis
-        # anchor_xy: calculate anchor coords (to be computed ONLY if coordinates exist)
-## Methods:
 
 class Interaction:
     def __init__(self, source, target, interaction_type):
@@ -116,6 +91,8 @@ class Interaction:
 
     def bind_to_anchor(self, anchor_id, xy=None):
         self.target = anchor_id
+        if xy is not None:
+            self.anchor_xy = xy
             
 
     def to_gpml(self):
@@ -128,11 +105,11 @@ class Interaction:
         })
 
         if self.type == "mim-catalysis":
-            enz = self.source       # Node = GeneProduct
+            enz = self.source       # GeneProduct node
             anchor_id = self.target
             ex, ey = enz.x, enz.y   # Enzyme coordinates
         
-            # Origin point: enzyme (center)
+            # Origin point: enzyme center
             ET.SubElement(graphics, "Point", {
                 "X": str(ex),
                 "Y": str(ey),
@@ -140,8 +117,13 @@ class Interaction:
                 "RelX": "0.0",
                 "RelY": "0.0"
             })
-            # Destination point: anchor (only GraphRef=anchor_id, without X/Y)
-            ax, ay = self.anchor_xy if self.anchor_xy is not None else (ex, ey)
+            # Destination point: anchor (use anchor_xy)
+            if self.anchor_xy is None:
+                # defensive: fall back to enzyme center
+                ax, ay = ex, ey
+            else:
+                ax, ay = self.anchor_xy
+
             ET.SubElement(graphics, "Point", {
                 "X": str(ax),
                 "Y": str(ay),
@@ -160,7 +142,7 @@ class ConversionInteraction(Interaction):
         super().__init__(source, target, "mim-conversion")
         self.anchor_id = anchor_id
         self._anchor_xy = None # private: to be computed by Layout class
-        self.anchor_pos = 0.5
+        self.anchor_pos = 0.8
 
 
     def to_gpml(self):
@@ -218,6 +200,10 @@ class ConversionInteraction(Interaction):
 BOARD_MARGIN = 200.0    # margin around everything
 LAYER_GAP = 120.0       # vertical separation between BFS layers
 COL_GAP = 250.0         # approximate horizontal separation
+
+ENZYME_OFFSET_X = 100.0     # horizontal distance from anchor to enzyme
+ENZYME_OFFSET_Y = 10.0      # horizontal distance from anchor to enzyme
+ENZYME_STACK_GAP = 35.0   # vertical separation when several enzymes share an anchor
 
 ############################# LAYOUT CREATION #################################
 
@@ -319,8 +305,9 @@ class Layout:
         
 
     def layout_catalysis(self):
-        """Place enzyme nodes at their anchors once catalysis interactions exist."""
-        # Build anchor lookup: anchor_id -> anchor_xy from conversion inter
+        """Place enzyme nodes next to their anchors once catalysis 
+        interactions exist."""
+        # Build mapping: anchor_id -> (ax, ay)
         anchor_xy_dict = {     
             inter.anchor_id: inter._anchor_xy
             for inter in self.interactions
@@ -328,26 +315,47 @@ class Layout:
                 and inter.anchor_id is not None
                 and inter._anchor_xy is not None}
 
+        # Group enzymes by anchor_id
+        enzymes_by_anchor = defaultdict(list)
         for inter in self.interactions:
             if inter.type == "mim-catalysis":
             # Catalysis: source = enzyme/GeneProduct, target = anchor_id
-                enz = inter.source       
+                enz = inter.source       # GeneProduct node
+                anchor_id = inter.target # anchor GraphId
+                if enz is not None and anchor_id in anchor_xy_dict:
+                    enzymes_by_anchor[anchor_id].append(enz)
+
+        # Place enzymes next to their anchors, stacked vertically
+        for anchor_id, enzymes in enzymes_by_anchor.items():
+            ax, ay = anchor_xy_dict[anchor_id]
+
+            # Put enzymes above the anchor, stacked
+            base_x = ax + ENZYME_OFFSET_X
+            base_y = ay - ENZYME_OFFSET_Y
+
+            # Center the stack around the anchor in Y
+            n = len(enzymes)
+            if n == 1:
+                offsets = [0.0]
+            else:
+                total_height = (n - 1) * ENZYME_STACK_GAP
+                offsets = [(-total_height / 2.0) 
+                           + i * ENZYME_STACK_GAP for i in range(n)]
+
+            for enz, dy in zip(enzymes, offsets):
+                enz.coords(base_x, base_y + dy)
+
+        # Update catalysis interactions with the anchor_xy (for GPML Points)
+        for inter in self.interactions:
+            if inter.type == "mim-catalysis":
                 anchor_id = inter.target
-                if anchor_id in anchor_xy_dict and enz is not None:
-                    ax, ay = anchor_xy_dict[anchor_id]
-                    enz.coords(ax, ay) # place enzyme exactly at anchor
-                    inter.anchor_xy = (ax, ay)
+                if anchor_id in anchor_xy_dict:
+                    inter.anchor_xy = anchor_xy_dict[anchor_id]
 
 
 ############################## BUILDER CLASSES ################################
 ################################## Parser #####################################
-# Performs PIPELINE steps:
-    # read TSV
-    # match IDs
-    # decide node types
-    # filter rows
-    # construct interactions
-    # read databases
+
 
 class Parser:
     def __init__(self, id_data_df, relations_df):
@@ -487,18 +495,6 @@ class Parser:
             
 ############################### XML build #####################################
 
-# PASAR A AQUÍ todo LO RELATIVO AL XML...
-    # Gather all your nodes/interactions from TSVParser
-    # Build the XML tree using their to_gpml() methods
-
-    # header creation
-    # mapping nodes → XML
-    # mapping interactions → XML
-    # handling attributes
-    # board size
-    # naming/organism metadata
-    # consistency
-
 class XMLBuilder:  
     def __init__(self, title, organism=None, nodes=None, interactions=None):
         self.title = title
@@ -551,8 +547,8 @@ def main(pathway_title, organism,
          ID_data_file, relations_file, output_filename, 
          delimiter="\t"):
     # DataFrames from Data and Relations files
-    id_data_df = pd.read_csv(ID_data_file, sep=delimiter, encoding="cp1252")
-    relations_df = pd.read_csv(relations_file, sep=delimiter, encoding="cp1252")
+    id_data_df = read_csv(ID_data_file,   sep=delimiter)
+    relations_df = read_csv(relations_file, sep=delimiter)
 
     # Parse DF and get node and interaction objects
     builder = Parser(id_data_df, relations_df)
@@ -611,12 +607,23 @@ def main(pathway_title, organism,
     #     print(f"{source_label} → {target_label}: {vars(inter)}")
 
 
+########################## Helper Functions ###################################
+
+def read_csv(path, sep="\t", encodings=("utf-8", "utf-16", "cp1252")):
+    last_err = None
+    for enc in encodings:
+        try:
+            return pd.read_csv(path, sep=sep, encoding=enc)
+        except UnicodeError as e:
+            last_err = e
+        except UnicodeDecodeError as e:
+            last_err = e
+    # If none of them work
+    raise last_err
+
+
 ############################ ID GENERATOR #####################################
-## Attributes:
-        # counters
-## Methods:
-        # _prefix: extract prefix according to node type
-        # new: create a new id
+
 class IDGenerator: 
     """
     Generate unique IDs with custom prefixes.
@@ -653,22 +660,25 @@ idgenerator = IDGenerator()
 ############################# ENTRY POINT #####################################
 
 if __name__ == "__main__":
-    # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/2-Secondary_BA_Synthesis_CA-Based_reactions_updated.tsv"
-    # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/relationships.tsv"
+    # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/.tsv"
+    # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/_relationships.tsv"
     # output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
     #home
-    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/4-Secondary_BA_Synthesis_MouseOnly_updated.tsv"
-    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/relationships.tsv"
-    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/SecondaryBA-Murine_CDCA.gpml"
+    # ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/Alternative/AlternativeBA.tsv"
+    # relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/Alternative/AlternativeBA_relationships.tsv"
+    # output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/AlternativeBA.gpml"
     
-    pathway_title = "Murine CDCA - MCA/MDCA pathway: bile salt deconjugation, secondary bile acid synthesis, reconjugation and sulfation "
-                 ## "CA-based bile salt deconjugation, secondary BA synthesis, reconjugation and sulfation" 
-                 ## "Alternative/Acidic BA biosynthesis pathway"
-    organism = "Mus-musculus" ## "Homo sapiens"
+    # examples
+    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/CA-DCA_UCA2.tsv"
+    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/CA-DCA_UCA_relationships2.tsv"
+    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/Sample3-CA-DCA_UCA.gpml"
+
+
+    pathway_title = "CA-DCA_UCA Sample"
+    organism = "Homo sapiens" ## "Homo sapiens" "Mus-musculus"
 
     main(pathway_title, organism, 
          ID_data_file, relations_file, output_filename)
-
 
 
 ## NOTES:
