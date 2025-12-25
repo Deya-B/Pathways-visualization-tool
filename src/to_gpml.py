@@ -7,6 +7,7 @@ import pandas as pd
 from collections import defaultdict
 import xml.etree.ElementTree as ET  # create and manipulate XML structures
 import networkx as nx
+import matplotlib.pyplot as plt 
 
 
 # TODO: Add PEP 257 style (https://peps.python.org/pep-0257/) Docstrings 
@@ -17,9 +18,22 @@ import networkx as nx
 # TODO: add organs > make like groups
 # TODO: incorporate a yaml config file
 # TODO: incorporate hypothetical/multi-step reaction
-# TODO: incorporate reading of 2 or more ID's from ID col, ex:A7B3K3;C8WMP0
 # TODO: aggregate edges involving colapsed nodes
 
+
+
+############################# CONFIGURATION ###################################
+# Layout/Board
+BOARD_MARGIN = 200.0    # margin around everything
+LAYER_GAP = 120.0       # vertical separation between BFS layers
+COL_GAP = 250.0         # approximate horizontal separation
+
+ENZYME_OFFSET_X = 100.0     # horizontal distance from anchor to enzyme
+ENZYME_OFFSET_Y = 10.0      # horizontal distance from anchor to enzyme
+ENZYME_STACK_GAP = 35.0   # vertical separation when several enzymes share an anchor
+
+# Global variables with accepted variants
+PATHWAY_DB_NAMES = {"wikipathways", "reactome", "kegg pathway"}
 
 ################################ NODE #########################################
 
@@ -65,7 +79,7 @@ class Node:
                                    or self.node_type == "GeneProduct" 
                                    else "Bold",
             "FontSize": "12",
-            "ShapeType": "None" if self.node_type == "Pathway" 
+            "ShapeType": "RoundedRectangle" if self.node_type == "Pathway" 
                                 else "Rectangle",
             "Valign": "Middle", 
             "Color": str(self.colour)
@@ -75,6 +89,7 @@ class Node:
                 "Database": str(self.database),
                 "ID": str(self.db_id)
             })
+        
         return datanode
 
 
@@ -195,16 +210,6 @@ class ConversionInteraction(Interaction):
         return inter_el
 
 
-###################### Layout/Board CONFIGURATION #############################
-
-BOARD_MARGIN = 200.0    # margin around everything
-LAYER_GAP = 120.0       # vertical separation between BFS layers
-COL_GAP = 250.0         # approximate horizontal separation
-
-ENZYME_OFFSET_X = 100.0     # horizontal distance from anchor to enzyme
-ENZYME_OFFSET_Y = 10.0      # horizontal distance from anchor to enzyme
-ENZYME_STACK_GAP = 35.0   # vertical separation when several enzymes share an anchor
-
 ############################# LAYOUT CREATION #################################
 
 class Layout:
@@ -239,7 +244,7 @@ class Layout:
         """Pre-layout positions: Assign x,y to metabolites and pathways 
         nodes only."""
        # Skeleton graph with source/target nodes and conversion interactions only
-        G = nx.Graph()
+        G = nx.DiGraph()
 
         for node in self.nodes.values():
             if node.node_type == "GeneProduct": # Ignore enzymes for now
@@ -248,6 +253,7 @@ class Layout:
 
         for inter in self.interactions:
             if isinstance(inter, ConversionInteraction):
+                # direction: source -> target
                 G.add_edge(inter.source.graph_id, inter.target.graph_id)
 
 
@@ -259,11 +265,13 @@ class Layout:
         # plt.show()
 
 
-        # BFS layering, get a list of rows with the topology           
+        # Compute all nodes with in-degree 0 = Nodes with no predecessors (roots)
+        sources = [n for n in G.nodes if G.in_degree(n) == 0]
+
+        # BFS layering: Build layers so that all sources are in layer 0           
         has_nodes = G.number_of_nodes() > 0
-        if has_nodes: # creates lists of nodes by depth from a root/start node
-            start_node = next(iter(G.nodes))
-            bfs_layers_iterator = nx.bfs_layers(G, [start_node])
+        if has_nodes: # creates lists of nodes by depth from the roots/start nodes
+            bfs_layers_iterator = nx.bfs_layers(G, sources)
             layers = list(bfs_layers_iterator) 
         else:
             layers = []
@@ -372,6 +380,17 @@ class Parser:
             self.relations_df.columns[0:3])
 
 
+    def _clean_field(self, value, *, empty_to_none=True):
+        """Normalize string-like fields from TSV/CSV."""
+        if isinstance(value, str):
+            value = value.strip()
+        if pd.isna(value):
+            value = ""
+        if empty_to_none and value == "":
+            return None
+        return value
+
+
     def _is_pathway(self, node_id):
         """
         Devuelve True si:
@@ -383,8 +402,8 @@ class Parser:
         if pd.isnull(node_id):
             return False
         
-        # WikiPathways: WP + 4-5 dígitos + opcional _rN
-        if re.fullmatch(r"WP\d{4,5}(?:_r\d+)?", str(node_id)):
+        # WikiPathways: WP + 4-5 dígitos
+        if re.fullmatch(r"WP\d{4,5}.*", str(node_id)):
             return True
 
         # KEGG Pathway típico: 3 letras (organismo) + 5 dígitos
@@ -395,14 +414,18 @@ class Parser:
         match = self.id_data_df[self.id_data_df[self.id_col] == node_id]
         if match.empty:
             return False
-        db_value = str(match.iloc[0][self.db_col])
-        return "pathway" in db_value.lower() # Contiene "pathway"
-    
+        db_value = str(match.iloc[0][self.db_col]).lower()
+        if any(name in db_value for name in PATHWAY_DB_NAMES):
+            return True
+        return False
+
 
     def _get_create_node (self, node_id):
         """For source and target nodes"""
+        node_id = self._clean_field(node_id)  # normalize ID
         if pd.isnull(node_id):
             return None
+        
         # If already created, return it
         if node_id in self.db_index:
             graph_id = self.db_index[node_id]
@@ -412,25 +435,32 @@ class Parser:
         match = self.id_data_df[self.id_data_df[self.id_col] == node_id]
         if match.empty:
             return None
+        
         info = match.iloc[0]
         is_pathway_flag = self._is_pathway(node_id)
         node_type = "Pathway" if is_pathway_flag else "Metabolite"
         colour = self.get_node_colour(node_type)
         
+        label = self._clean_field(info[self.name_col], empty_to_none=False)
+        database = self._clean_field(info[self.db_col], empty_to_none=False)
+
         # Extract info from tabular data and transform into a Node object
-        node = Node(node_type, info[self.name_col], info[self.db_col], node_id, colour)
+        node = Node(node_type, label, database, node_id, colour)
         self.nodes[node.graph_id] = node
 
         # Record that this metabolite is already mapped
-        self.db_index[node_id] = node.graph_id        
-
+        self.db_index[node_id] = node.graph_id     
         return node
 
 
     def build_conversions(self, row):
         # Obtain source and target ID
-        source_id = getattr(row, self.source_col)
-        target_id = getattr(row, self.target_col)
+        raw_source = getattr(row, self.source_col)
+        raw_target = getattr(row, self.target_col)
+
+        source_id = self._clean_field(raw_source)
+        target_id = self._clean_field(raw_target)
+
         # Build nodes
         source_node = self._get_create_node(source_id)
         target_node = self._get_create_node(target_id)
@@ -440,14 +470,15 @@ class Parser:
             conversion = ConversionInteraction(source_node, target_node)
             self.interactions.append(conversion)
             return conversion
-        
         return None
         
 
     def _create_catalyser_node(self, catal_id):
         """For catalyser nodes"""
+        catal_id = self._clean_field(catal_id)
         if pd.isnull(catal_id):
-            return
+            return None
+        
         # Find metadata row
         match = self.id_data_df[self.id_data_df[self.id_col] == catal_id]
         if match.empty:
@@ -455,15 +486,19 @@ class Parser:
         
         info = match.iloc[0]
         colour = self.get_node_colour("GeneProduct")
-        node = Node("GeneProduct", info[self.name_col], info[self.db_col], catal_id, colour)
-        self.nodes[node.graph_id] = node
+            
+        label = self._clean_field(info[self.name_col], empty_to_none=False)
+        database = self._clean_field(info[self.db_col], empty_to_none=False)
 
+        node = Node("GeneProduct", label, database, catal_id, colour)
+        self.nodes[node.graph_id] = node
         return node
     
 
     def build_catalysis(self, row, conv_interaction):
         # Obtain catalyser ID
-        catal_id = getattr(row, self.catalyser_col)
+        raw_catal = getattr(row, self.catalyser_col)
+        catal_id = self._clean_field(raw_catal)
         if pd.isnull(catal_id):
             return None # no enzyme -> no interaction
         
@@ -500,7 +535,7 @@ class XMLBuilder:
         self.title = title
         self.organism = organism
         self._laid_out = False 
-        self.nodes = nodes or {}             # Node label
+        self.nodes = nodes or {}    # Node label
         self._nodes_by_id = {}      # Node graph_id
         self.interactions = interactions or []
 
@@ -591,22 +626,6 @@ def main(pathway_title, organism,
     tree.write(output_filename, encoding="utf-8", xml_declaration=True)
 
 
-
-    # Checkers
-    # for key, node in builder.nodes.items():
-    #     print(f"{key}: {vars(node)}")  # vars() returns the attributes as a dict
-
-    # for inter in conversions_list:
-    #     source_label = inter.source.graph_id if inter.source else "None"
-    #     target_label = inter.target.graph_id if inter.target else "None"
-    #     print(f"{source_label} → {target_label}: {vars(inter)}")
-
-    # for inter in catalysis_list:
-    #     source_label = inter.source.graph_id if inter.source else "None"
-    #     target_label = inter.target
-    #     print(f"{source_label} → {target_label}: {vars(inter)}")
-
-
 ########################## Helper Functions ###################################
 
 def read_csv(path, sep="\t", encodings=("utf-8", "utf-16", "cp1252")):
@@ -664,17 +683,17 @@ if __name__ == "__main__":
     # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/_relationships.tsv"
     # output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
     #home
-    # ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/Alternative/AlternativeBA.tsv"
-    # relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/Alternative/AlternativeBA_relationships.tsv"
-    # output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/gpml/AlternativeBA.gpml"
+    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/CA-DCA_UCA.tsv"
+    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/CA-DCA_UCA_relationships.tsv"
+    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/CA-DCA_UCA_Test.gpml"
     
     # examples
-    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/CA-DCA_UCA2.tsv"
-    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/CA-DCA_UCA_relationships2.tsv"
-    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/Sample3-CA-DCA_UCA.gpml"
+    # ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/CA-DCA_UCA2.tsv"
+    # relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/CA-DCA_UCA_relationships2.tsv"
+    # output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/Sample3-CA-DCA_UCA.gpml"
 
 
-    pathway_title = "CA-DCA_UCA Sample"
+    pathway_title = "CA-DCA_UCA_Test"
     organism = "Homo sapiens" ## "Homo sapiens" "Mus-musculus"
 
     main(pathway_title, organism, 
@@ -692,15 +711,14 @@ if __name__ == "__main__":
     #   Source Node ID, Target Node ID, Catalyser Node ID
     # If the ID from the DataBase is not available (in cases where the  
     #   specific component is not found in a DataBase), then an ID such 
-    #   as "metabo1", "enz1"... must be provided.
+    #   as "CNIC-M001" (metabolite), "CNIC-E001" (enzyme)... must be provided
+    #   and added to the ID metadata file.
 
-# Data_file:
+# ID metadata file:
     # Must have the following columns in order:
-    #   DataBase ID, DataBase Name, Component Name
+    #   DataBase ID, DataBase Name, Label (Component Name)
     # IMPORTANT: Every ID from the relations file must be also present in 
     #   the ID_data_file provided. Otherwise this wont appear in the pathway.
-
-# Pathway node must be defined somewhere
 
 # ET.indent(tree, space="  "), part of xml.etree.ElementTree requires 
 #   Python ≥ 3.9 to work
