@@ -25,7 +25,7 @@ import matplotlib.pyplot as plt
 ############################# CONFIGURATION ###################################
 # Layout/Board
 BOARD_MARGIN = 200.0    # margin around everything
-LAYER_GAP = 120.0       # vertical separation between BFS layers
+LAYER_GAP = 120.0       # vertical separation
 COL_GAP = 250.0         # approximate horizontal separation
 
 ENZYME_OFFSET_X = 100.0     # horizontal distance from anchor to enzyme
@@ -251,58 +251,119 @@ class Layout:
                 continue
             G.add_node(node.graph_id)
 
+        # Add directed edges for conversions
         for inter in self.interactions:
             if isinstance(inter, ConversionInteraction):
-                # direction: source -> target
                 G.add_edge(inter.source.graph_id, inter.target.graph_id)
 
+        if G.number_of_nodes() == 0:
+            self._laid_out = True
+            return
 
-        # See graph
-        # labels = {n.graph_id: n.label for n in self.nodes.values()
-        #   if n.node_type != "GeneProduct"}
-        # pos = nx.spring_layout(G)  # o cualquier layout
-        # nx.draw(G, pos, labels=labels, node_color="lightblue", node_size=800, font_size=8)
-        # plt.show()
+    # Approach:   
+    # Collapse each strongly connected component (SCC) (i.e. cycle) into a 
+    #   single super‑node.
+    # Run the topological‑depth layout on this condensation DAG.
+    # Inside each SCC:
+        # If it has just 1 node, place it exactly at its layer position.
+        # If it has multiple nodes (cycle), place its members with a simple
+        #   local layout (e.g. small horizontal/vertical cluster around that 
+        #   layer position).
 
+        # 1) Strongly connected components
+        sccs = list(nx.strongly_connected_components(G))  # set of node ids per SCC
+        # Map node -> scc_id (index)
+        node2scc = {}
+        for idx, comp in enumerate(sccs):
+            for n in comp:
+                node2scc[n] = idx
 
-        # Compute all nodes with in-degree 0 = Nodes with no predecessors (roots)
-        sources = [n for n in G.nodes if G.in_degree(n) == 0]
+        # 2) Condensation graph (DAG of SCCs)
+        CG = nx.condensation(G, sccs)  # nodes are 0..len(sccs)-1, each is a SCC
+        # Topological order on SCC DAG
+        topo_scc = list(nx.topological_sort(CG))
 
-        # BFS layering: Build layers so that all sources are in layer 0           
-        has_nodes = G.number_of_nodes() > 0
-        if has_nodes: # creates lists of nodes by depth from the roots/start nodes
-            bfs_layers_iterator = nx.bfs_layers(G, sources)
-            layers = list(bfs_layers_iterator) 
-        else:
-            layers = []
+        # 3) Depth per SCC (longest path)
+        depth_scc = {c: 0 for c in topo_scc}
+        for u in topo_scc:
+            for v in CG.successors(u):
+                depth_scc[v] = max(depth_scc[v], depth_scc[u] + 1)
 
-        # Setting x,y coords:
-        # Step 1 - Get maximal layer size and width
-        k_max = max((len(L) for L in layers), default=1) # find widest row
-        span_max = max(0, (k_max - 1) * COL_GAP) # width occupied by the widest row
-        
-        # Step 2 - Loop through layers/rows
-        placed = set() 
-        for ly, layer_nodes in enumerate(layers): 
-            k = len(layer_nodes) # number of nodes in this layer
-            span = max(0, (k - 1) * COL_GAP) # row width for this layer
-            start_x = BOARD_MARGIN + (span_max - span) / 2.0 # center this row  under the widest row
-            y = 80 + ly * LAYER_GAP # y-position for this row
-        
-        # Step 3 - Assign positions to the nodes
-            for i, graph_id in enumerate(layer_nodes):
-                node = self.nodes[graph_id]
-                x = start_x + i * COL_GAP # horizontal position in the row
-                node.coords(x, y)
-                placed.add(graph_id) # save graph_ids already positioned
+        # 4) Layers of SCCs, then expand to node layers
+        max_depth = max(depth_scc.values(), default=0)
+        scc_layers = [[] for _ in range(max_depth + 1)]
+        for comp_id, d in depth_scc.items():
+            scc_layers[d].append(comp_id)
 
-        # Temporarily place enzymes on extra row
-        rest = [n for graph_id, n in self.nodes.items() if graph_id not in placed]
+        # Turn into node-based layers: each SCC contributes its members
+        layers = []
+        for d, comps in enumerate(scc_layers):
+            layer_nodes = []
+            for comp_id in comps:
+                layer_nodes.extend(sccs[comp_id])
+            layers.append(layer_nodes)
+
+        # 5) Horizontal spacing & placement
+        k_max = max((len(L) for L in layers), default=1)
+        span_max = max(0, (k_max - 1) * COL_GAP)
+
+        placed_x = {}  # node_id -> x
+        for ly, layer_nodes in enumerate(layers):
+            if not layer_nodes:
+                continue
+
+            # Order by average parent x, as before
+            if ly > 0:
+                def parent_avg_x(n):
+                    preds = list(G.predecessors(n))
+                    xs = [placed_x[p] for p in preds if p in placed_x]
+                    return sum(xs) / len(xs) if xs else 0.0
+                layer_nodes = sorted(layer_nodes, key=parent_avg_x)
+
+            k = len(layer_nodes)
+            span = max(0, (k - 1) * COL_GAP)
+            start_x = BOARD_MARGIN + (span_max - span) / 2.0
+            y = 80 + ly * LAYER_GAP
+
+            # For each SCC, group its nodes to place cycles compactly
+            # (single-node SCCs behave as usual)
+            by_scc = {}
+            for n in layer_nodes:
+                by_scc.setdefault(node2scc[n], []).append(n)
+
+            i = 0
+            for comp_id, members in by_scc.items():
+                size = len(members)
+                if size == 1:
+                    # normal case
+                    graph_id = members[0]
+                    node = self.nodes[graph_id]
+                    x = start_x + i * COL_GAP
+                    node.coords(x, y)
+                    placed_x[graph_id] = x
+                    i += 1
+                else:
+                    # small “cluster” for cycle: spread around main x
+                    center_x = start_x + i * COL_GAP
+                    # e.g. horizontal spread
+                    offset_step = 30.0
+                    offsets = [ (j - (size-1)/2.0) * offset_step for j in range(size) ]
+                    for m, dx in zip(members, offsets):
+                        node = self.nodes[m]
+                        x = center_x + dx
+                        node.coords(x, y)
+                        placed_x[m] = x
+                    i += 1  # one slot per SCC
+
+        # 6) Temporarily place enzymes on extra row
+        rest = [n for graph_id, n in self.nodes.items() if graph_id not in placed_x]
         for j, node in enumerate(rest):
-            node.coords(BOARD_MARGIN + j * COL_GAP, BOARD_MARGIN + (len(layers) + 1) * LAYER_GAP)
+            node.coords(
+                BOARD_MARGIN + j * COL_GAP, 
+                BOARD_MARGIN + (len(layers) + 1) * LAYER_GAP)
 
         self._laid_out = True
-    
+
 
     def layout_anchors(self):
         """Compute conversion anchor coordinates. To obtain anchor ID and xy"""
@@ -679,13 +740,20 @@ idgenerator = IDGenerator()
 ############################# ENTRY POINT #####################################
 
 if __name__ == "__main__":
+    name = "AlternativeBA"
+    # "AlternativeBA"
+    # "7a-dehydroxylation"
+    # "CA-DCA_UCA"
+    # "CDCA-LCA_UDCA"
+    # "MurineCDCA-MCA_MDCA"
+
     # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/.tsv"
     # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/_relationships.tsv"
     # output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
     #home
-    ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/CA-DCA_UCA.tsv"
-    relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/CA-DCA_UCA_relationships.tsv"
-    output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/CA-DCA_UCA_Test.gpml"
+    ID_data_file = f"C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/{name}.tsv"
+    relations_file = f"C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/{name}_relationships.tsv"
+    output_filename = f"C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/{name}_Test.gpml"
     
     # examples
     # ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/CA-DCA_UCA2.tsv"
@@ -693,11 +761,13 @@ if __name__ == "__main__":
     # output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/Sample3-CA-DCA_UCA.gpml"
 
 
-    pathway_title = "CA-DCA_UCA_Test"
+    pathway_title = f"{name}_Test"
     organism = "Homo sapiens" ## "Homo sapiens" "Mus-musculus"
 
     main(pathway_title, organism, 
          ID_data_file, relations_file, output_filename)
+
+
 
 
 ## NOTES:
