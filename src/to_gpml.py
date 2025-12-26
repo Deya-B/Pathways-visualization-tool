@@ -433,7 +433,8 @@ class Parser:
         self.db_index = {}
         self.nodes = {}
         self.interactions = []
-
+        self.conversion_by_pair = {}  # (source_id, target_id) -> ConvInter 
+                                      # to create only one ConvInter per pair
         # Get column names
         self.id_col, self.db_col, self.name_col = (
             self.id_data_df.columns[0:3])
@@ -526,12 +527,19 @@ class Parser:
         source_node = self._get_create_node(source_id)
         target_node = self._get_create_node(target_id)
 
-        # Conversion interaction (source -> target)
-        if source_node and target_node:
-            conversion = ConversionInteraction(source_node, target_node)
-            self.interactions.append(conversion)
-            return conversion
-        return None
+        if not (source_node and target_node):
+            return None
+
+        key = (source_id, target_id)
+
+        # Reuse existing ConversionInteraction if present
+        if key in self.conversion_by_pair:
+            return self.conversion_by_pair[key]
+        
+        conversion = ConversionInteraction(source_node, target_node)
+        self.interactions.append(conversion)
+        self.conversion_by_pair[key] = conversion
+        return conversion
         
 
     def _create_catalyser_node(self, catal_id):
@@ -567,7 +575,7 @@ class Parser:
         if catal_node is None:
             return None
         
-        anchor_id  = conv_interaction.anchor_id
+        anchor_id  = conv_interaction.anchor_id # shared anchor
         
         catal_inter = Interaction(
             source=catal_node, 
