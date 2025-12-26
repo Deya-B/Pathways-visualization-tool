@@ -15,11 +15,8 @@ import matplotlib.pyplot as plt
     # * For classes: what it represents + key attrs
     # * For methods: what it does, args, returns, side-effects
 
-# TODO: add organs > make like groups
 # TODO: incorporate a yaml config file
 # TODO: incorporate hypothetical/multi-step reaction
-# TODO: aggregate edges involving colapsed nodes
-
 
 
 ############################# CONFIGURATION ###################################
@@ -158,6 +155,11 @@ class ConversionInteraction(Interaction):
         self.anchor_id = anchor_id
         self._anchor_xy = None # private: to be computed by Layout class
         self.anchor_pos = 0.8
+        self.attachment = "vertical"  # attachment mode: "vertical" or "side"
+
+        # GPML point info (filled by Layout)
+        self._src_point = None  # dict with X,Y,RelX,RelY
+        self._tgt_point = None  # dict with X,Y,RelX,RelY
 
 
     def to_gpml(self):
@@ -170,36 +172,11 @@ class ConversionInteraction(Interaction):
             "LineThickness": "1.0"
         })
         
-        # Source point (Lower edge of origin node)
-        # NOTE: Attachment point: 
-                # left edge: (-1, 0) 
-                # right: (1, 0)
-                # top: (0, -1) 
-                # bottom: (0, 1)
-        sx = self.source.x
-        sy = self.source.y + self.source.height / 2.0   
-                                                         
-        ET.SubElement(graphics, "Point", {    
-                "X": str(sx),
-                "Y": str(sy),              
-                "GraphRef": self.source.graph_id, 
-                "RelX": "0.0", 
-                "RelY": "1.0"
-        })                                              
-        # Target point (Top edge of the destination node)
-        tx = self.target.x
-        ty = self.target.y - self.target.height / 2.0
-        ET.SubElement(graphics, "Point", {
-            "X": str(tx),
-            "Y": str(ty), 
-            "GraphRef": self.target.graph_id, 
-            "RelX": "0.0", 
-            "RelY": "-1.0",
-            "ArrowHead": "mim-conversion"
-        })
-            
-        # Anchor with GraphId: uses anchor_id and anchor_pos already 
-        #   calculated in Layout                                         
+        # Use points computed by Layout        
+        ET.SubElement(graphics, "Point", self._src_point)
+        ET.SubElement(graphics, "Point", self._tgt_point)
+
+        # Anchor with GraphId: uses anchor_id and anchor_pos calculated in Layout                                        
         ET.SubElement(graphics, "Anchor", {
             "GraphId": self.anchor_id, 
             "Position": str(self.anchor_pos), 
@@ -219,6 +196,7 @@ class Layout:
         self.boardwidth = None
         self.boardheight = None
         self._laid_out = False
+        self._node_depth = {}
 
 
     def compute_anchor_xy(self, interactions):
@@ -251,14 +229,9 @@ class Layout:
                 continue
             G.add_node(node.graph_id)
 
-        # Add directed edges for conversions
         for inter in self.interactions:
             if isinstance(inter, ConversionInteraction):
                 G.add_edge(inter.source.graph_id, inter.target.graph_id)
-
-        if G.number_of_nodes() == 0:
-            self._laid_out = True
-            return
 
     # Approach:   
     # Collapse each strongly connected component (SCC) (i.e. cycle) into a 
@@ -297,10 +270,20 @@ class Layout:
 
         # Turn into node-based layers: each SCC contributes its members
         layers = []
+        node_depth = {}  # graph_id -> numeric depth (can be non-integer)
         for d, comps in enumerate(scc_layers):
             layer_nodes = []
             for comp_id in comps:
-                layer_nodes.extend(sccs[comp_id])
+                members = list(sccs[comp_id])
+                layer_nodes.extend(members)
+                # inside the SCC, give each node a slight offset so edges
+                # have a direction even within cycles
+                if len(members) == 1:
+                    node_depth[members[0]] = float(d)
+                else:
+                    # e.g. d, d+0.1, d+0.2 ...
+                    for i, n in enumerate(members):
+                        node_depth[n] = float(d) + 0.1 * i
             layers.append(layer_nodes)
 
         # 5) Horizontal spacing & placement
@@ -308,6 +291,7 @@ class Layout:
         span_max = max(0, (k_max - 1) * COL_GAP)
 
         placed_x = {}  # node_id -> x
+        node_depth = {}  # graph_id -> layer index
         for ly, layer_nodes in enumerate(layers):
             if not layer_nodes:
                 continue
@@ -341,6 +325,7 @@ class Layout:
                     x = start_x + i * COL_GAP
                     node.coords(x, y)
                     placed_x[graph_id] = x
+                    node_depth[graph_id] = ly
                     i += 1
                 else:
                     # small “cluster” for cycle: spread around main x
@@ -353,6 +338,7 @@ class Layout:
                         x = center_x + dx
                         node.coords(x, y)
                         placed_x[m] = x
+                        node_depth[m] = ly
                     i += 1  # one slot per SCC
 
         # 6) Temporarily place enzymes on extra row
@@ -361,6 +347,12 @@ class Layout:
             node.coords(
                 BOARD_MARGIN + j * COL_GAP, 
                 BOARD_MARGIN + (len(layers) + 1) * LAYER_GAP)
+
+        # Save depths
+        self._node_depth = node_depth
+
+        # 7) Compute conversion attachment points
+        self._layout_conversions()
 
         self._laid_out = True
 
@@ -372,6 +364,78 @@ class Layout:
                 xy = self.compute_anchor_xy(inter) # calculate anchor coords
                 inter._anchor_xy = xy              # update atribute
         
+
+    def _layout_conversions(self):
+        """Decide attachment type and GPML points for each conversion."""
+            # NOTE: Attachment points 
+            # left edge: (-1, 0) 
+            # right: (1, 0)
+            # top: (0, -1) 
+            # bottom: (0, 1)
+        depth = getattr(self, "_node_depth", {})
+
+        for inter in self.interactions:
+            if not isinstance(inter, ConversionInteraction):
+                continue
+
+            src = inter.source
+            tgt = inter.target
+
+            d_src = depth.get(src.graph_id, 0)
+            d_tgt = depth.get(tgt.graph_id, 0)
+
+            # Decide vertical vs side based on y (source above target => vertical)
+            if d_src < d_tgt:
+                inter.attachment = "vertical"
+            else:
+                inter.attachment = "side"
+
+            if inter.attachment == "vertical":
+                # bottom of source -> top of target
+                sx = src.x
+                sy = src.y + src.height / 2.0
+                s_relx, s_rely = "0.0", "1.0"
+
+                tx = tgt.x
+                ty = tgt.y - tgt.height / 2.0
+                t_relx, t_rely = "0.0", "-1.0"
+
+            else:
+                # side-to-side for backward/return edges
+                if src.x <= tgt.x:
+                    # source left of target
+                    sx = src.x + src.width / 2.0
+                    s_relx, s_rely = "1.0", "0.0"
+
+                    tx = tgt.x - tgt.width / 2.0
+                    t_relx, t_rely = "-1.0", "0.0"
+                else:
+                    # source right of target
+                    sx = src.x - src.width / 2.0
+                    s_relx, s_rely = "-1.0", "0.0"
+
+                    tx = tgt.x + tgt.width / 2.0
+                    t_relx, t_rely = "1.0", "0.0"
+
+                sy = src.y
+                ty = tgt.y
+
+            inter._src_point = {
+                "X": str(sx),
+                "Y": str(sy),
+                "GraphRef": src.graph_id,
+                "RelX": s_relx,
+                "RelY": s_rely,
+            }
+            inter._tgt_point = {
+                "X": str(tx),
+                "Y": str(ty),
+                "GraphRef": tgt.graph_id,
+                "RelX": t_relx,
+                "RelY": t_rely,
+                "ArrowHead": "mim-conversion",
+            }
+
 
     def layout_catalysis(self):
         """Place enzyme nodes next to their anchors once catalysis 
@@ -748,7 +812,7 @@ idgenerator = IDGenerator()
 ############################# ENTRY POINT #####################################
 
 if __name__ == "__main__":
-    name = "AlternativeBA"
+    name = "CA-DCA_UCA"
     # "AlternativeBA"
     # "7a-dehydroxylation"
     # "CA-DCA_UCA"
