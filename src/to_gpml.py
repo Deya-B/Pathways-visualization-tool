@@ -21,13 +21,14 @@ import matplotlib.pyplot as plt
 
 ############################# CONFIGURATION ###################################
 # Layout/Board
-BOARD_MARGIN = 200.0    # margin around everything
+BOARD_MARGIN = 100    # margin around everything
+CENTERING_FACTOR = 0.8  # between 0.0 (no centering) and 1.0 (full centering)
 LAYER_GAP = 120.0       # vertical separation
 COL_GAP = 250.0         # approximate horizontal separation
 
-ENZYME_OFFSET_X = 100.0     # horizontal distance from anchor to enzyme
-ENZYME_OFFSET_Y = 10.0      # horizontal distance from anchor to enzyme
-ENZYME_STACK_GAP = 35.0   # vertical separation when several enzymes share an anchor
+ENZYME_OFFSET_X = 180.0     # horizontal distance from anchor to enzyme
+ENZYME_OFFSET_Y = 40.0      # horizontal distance from anchor to enzyme
+ENZYME_STACK_GAP = 22.0   # vertical separation when several enzymes share an anchor
 
 # Global variables with accepted variants
 PATHWAY_DB_NAMES = {"wikipathways", "reactome", "kegg pathway"}
@@ -327,7 +328,7 @@ class Layout:
             # 5a) Compute row geometry
             k = len(layer_nodes)
             span = max(0, (k - 1) * COL_GAP)
-            start_x = BOARD_MARGIN + (span_max - span) / 2.0
+            start_x = BOARD_MARGIN + CENTERING_FACTOR * (span_max - span) / 2.0
             y = 80 + ly * LAYER_GAP
 
             # Group nodes in this layer by SCC
@@ -556,7 +557,8 @@ class Layout:
             for inter in self.interactions
             if isinstance(inter, ConversionInteraction) 
                 and inter.anchor_id is not None
-                and inter._anchor_xy is not None}
+                and inter._anchor_xy is not None
+        }
 
         # Group enzymes by anchor_id
         enzymes_by_anchor = defaultdict(list)
