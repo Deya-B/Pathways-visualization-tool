@@ -197,6 +197,7 @@ class Layout:
         self.boardwidth = None
         self.boardheight = None
         self._laid_out = False
+        self._parent_of = {}
         self._node_depth = {}
 
 
@@ -233,6 +234,13 @@ class Layout:
         for inter in self.interactions:
             if isinstance(inter, ConversionInteraction):
                 G.add_edge(inter.source.graph_id, inter.target.graph_id)
+
+        parent_of = {}
+        for u, v in G.edges:
+            if v not in parent_of:
+                parent_of[v] = u
+
+        self._parent_of = parent_of
 
         # Precompute degrees for chain detection
         in_deg = {n: G.in_degree(n) for n in G.nodes}
@@ -276,6 +284,7 @@ class Layout:
         # Turn into node-based layers: each SCC contributes its members
         layers = []
         node_depth = {}  # graph_id -> numeric depth (can be non-integer)
+
         for d, comps in enumerate(scc_layers):
             layer_nodes = []
             for comp_id in comps:
@@ -286,9 +295,9 @@ class Layout:
                 if len(members) == 1:
                     node_depth[members[0]] = float(d)
                 else:
-                    # e.g. d, d+0.1, d+0.2 ...
-                    for i, n in enumerate(members):
-                        node_depth[n] = float(d) + 0.1 * i
+                    # temporarily same base depth; refined after SCC layout
+                    for n in members:
+                        node_depth[n] = float(d)
             layers.append(layer_nodes)
 
         # 5) Horizontal spacing & placement
@@ -325,7 +334,7 @@ class Layout:
             if not layer_nodes:
                 continue
 
-            # 5a) Compute row geometry
+            # Compute row geometry
             k = len(layer_nodes)
             span = max(0, (k - 1) * COL_GAP)
             start_x = BOARD_MARGIN + CENTERING_FACTOR * (span_max - span) / 2.0
@@ -413,13 +422,46 @@ class Layout:
 
                 else:
                     self._layout_scc_as_tree(
-                        members, G, center_x=center_x, base_y=y)
+                        members, 
+                        G,
+                        center_x=center_x,
+                        base_y=y,
+                    )
                     for m in members:
                         placed_x[m] = self.nodes[m].x
 
 
                 placed_scc_x[comp_id] = center_x
                 i += 1  # one slot per SCC
+
+
+        # 5.8) Fix vertical placement of non-SCC single-parent children
+        for child, parent in self._parent_of.items():
+            # Skip SCC-internal nodes
+            if node2scc[child] == node2scc[parent]:
+                continue
+
+            parent_scc = node2scc[parent]
+            
+            if CG.in_degree(parent_scc) == 0:
+                continue
+
+            if G.in_degree(child) != 1:
+                continue
+
+            child_node = self.nodes[child]
+            parent_node = self.nodes[parent]
+
+            if parent_node.y is None:
+                continue
+
+            # Force child below parent
+            if child_node.y <= parent_node.y:
+                child_node.coords(
+                    child_node.x,
+                    parent_node.y + LAYER_GAP
+                )
+
 
         # 6) Temporarily place enzymes on extra row
         rest = [n for graph_id, n in self.nodes.items() if graph_id not in placed_x]
@@ -439,15 +481,15 @@ class Layout:
 
     def _layout_scc_as_tree(self, scc_nodes, G, center_x, base_y):
         """
-        Layout SCC nodes as a vertical tree with horizontal branching.
+        Layout SCC nodes as a vertical reversible chain, preserving visual order and keeping children below.
         """
         # Subgraph restricted to SCC
         SG = G.subgraph(scc_nodes)
 
-        # Choose root: node with max outgoing edges outside SCC
         def score(n):
-            return sum(1 for v in G.successors(n) if v not in scc_nodes)
-
+            # Prefer nodes with FEWER incoming edges from outside the SCC
+            return sum(1 for u in G.predecessors(n) if u not in scc_nodes)
+        
         root = max(scc_nodes, key=score)
 
         # BFS tree
@@ -457,11 +499,16 @@ class Layout:
         for n in tree.nodes:
             d = nx.shortest_path_length(tree, root, n)
             levels[d].append(n)
-
+       
+        # assign depths relative to root: root at base, children below etc
         for depth, nodes in levels.items():
+            for n in nodes:
+                # 0.2 is arbitrary "within-SCC" depth increment
+                self._node_depth[n] = self._node_depth.get(root, 0) + 0.2 * depth
+
             span = (len(nodes) - 1) * COL_GAP
             start_x = center_x - span / 2.0
-            y = base_y + depth * LAYER_GAP * 0.6
+            y = base_y + depth * LAYER_GAP
 
             for i, n in enumerate(nodes):
                 x = start_x + i * COL_GAP
@@ -492,10 +539,10 @@ class Layout:
             src = inter.source
             tgt = inter.target
 
-            d_src = depth.get(src.graph_id, 0)
-            d_tgt = depth.get(tgt.graph_id, 0)
-
             # Decide vertical vs side based on y (source above target => vertical)
+            d_src = depth.get(src.graph_id, 0.0)
+            d_tgt = depth.get(tgt.graph_id, 0.0)
+
             if d_src < d_tgt:
                 inter.attachment = "vertical"
             else:
