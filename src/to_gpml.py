@@ -233,6 +233,10 @@ class Layout:
             if isinstance(inter, ConversionInteraction):
                 G.add_edge(inter.source.graph_id, inter.target.graph_id)
 
+        # Precompute degrees for chain detection
+        in_deg = {n: G.in_degree(n) for n in G.nodes}
+        out_deg = {n: G.out_degree(n) for n in G.nodes}
+
     # Approach:   
     # Collapse each strongly connected component (SCC) (i.e. cycle) into a 
     #   single super‑node.
@@ -243,7 +247,7 @@ class Layout:
         #   local layout (e.g. small horizontal/vertical cluster around that 
         #   layer position).
 
-        # 1) Strongly connected components
+        # 1) Strongly connected components (SCC)
         sccs = list(nx.strongly_connected_components(G))  # set of node ids per SCC
         # Map node -> scc_id (index)
         node2scc = {}
@@ -291,55 +295,130 @@ class Layout:
         span_max = max(0, (k_max - 1) * COL_GAP)
 
         placed_x = {}  # node_id -> x
-        node_depth = {}  # graph_id -> layer index
+        placed_scc_x = {}   # scc_id  -> x
+        scc_child_count = defaultdict(int)  # parent_scc_id -> how many snapped children
+
+
+        # Local depth of each SCC within its parent’s subgraph (for ordering)
+        scc_local_depth = defaultdict(int)
+
+        # Simple BFS from each SCC to assign increasing depth to descendants
+        for s in CG.nodes:
+            # skip if no outgoing edges
+            if CG.out_degree(s) == 0:
+                continue
+            # BFS from s
+            queue = [(s, 0)]
+            seen = {s}
+            while queue:
+                u, d = queue.pop(0)
+                for v in CG.successors(u):
+                    if v not in seen:
+                        seen.add(v)
+                        # depth relative to s
+                        scc_local_depth[v] = max(scc_local_depth[v], d + 1)
+                        queue.append((v, d + 1))
+
+
         for ly, layer_nodes in enumerate(layers):
             if not layer_nodes:
                 continue
 
-            # Order by average parent x, as before
-            if ly > 0:
-                def parent_avg_x(n):
-                    preds = list(G.predecessors(n))
-                    xs = [placed_x[p] for p in preds if p in placed_x]
-                    return sum(xs) / len(xs) if xs else 0.0
-                layer_nodes = sorted(layer_nodes, key=parent_avg_x)
-
+            # 5a) Compute row geometry
             k = len(layer_nodes)
             span = max(0, (k - 1) * COL_GAP)
             start_x = BOARD_MARGIN + (span_max - span) / 2.0
             y = 80 + ly * LAYER_GAP
 
-            # For each SCC, group its nodes to place cycles compactly
-            # (single-node SCCs behave as usual)
+            # Group nodes in this layer by SCC
             by_scc = {}
             for n in layer_nodes:
                 by_scc.setdefault(node2scc[n], []).append(n)
 
+            # Helper: average parent x per SCC (using condensation graph)
+            def scc_parent_avg_x(scc_id):
+                parent_sccs = list(CG.predecessors(scc_id))
+                xs = []
+                for ps in parent_sccs:
+                    if ps in placed_scc_x:
+                        xs.append(placed_scc_x[ps])
+                    else:
+                        # fallback: use individual parent nodes if any are placed
+                        for n in sccs[ps]:
+                            preds = list(G.predecessors(n))
+                            xs.extend(placed_x[p] for p in preds if p in placed_x)
+                return sum(xs) / len(xs) if xs else float("inf")
+
+            # Order SCC blocks by their parent barycenter
+            scc_ids_in_layer = list(by_scc.keys())
+            scc_ids_in_layer.sort(key=scc_parent_avg_x)
+
             i = 0
-            for comp_id, members in by_scc.items():
+            for comp_id in scc_ids_in_layer:
+                members = by_scc[comp_id]
                 size = len(members)
+
+                # Default column-based x for this SCC
+                col_x = start_x + i * COL_GAP
+
+                # Strong-chain rule at SCC level:
+                # if SCC has exactly one incoming SCC and that parent SCC
+                # has only this SCC as outgoing, snap under parent SCC
+                parent_sccs = list(CG.predecessors(comp_id))
+
+                if len(parent_sccs) == 1 and parent_sccs[0] in placed_scc_x:
+                    p = parent_sccs[0]
+                    
+                    # Children of p in this layer, sorted by local depth then id
+                    siblings = [
+                        cid for cid in scc_ids_in_layer
+                        if p in CG.predecessors(cid)
+                    ]
+                    siblings.sort(key=lambda cid: (scc_local_depth[cid], cid))
+
+                    # Index of this comp_id among its siblings
+                    idx = siblings.index(comp_id)
+
+                    if idx == 0:
+                        # first child: exactly under parent
+                        center_x = placed_scc_x[p]
+                    else:
+                        # next children: alternate left/right, moving outward
+                        offset_index = (idx + 1) // 2
+                        offset = offset_index * COL_GAP
+                        sign = -1 if idx % 2 == 1 else 1
+                        center_x = placed_scc_x[p] + sign * offset
+
+                    scc_child_count[p] += 1
+                else:
+                    center_x = col_x
+
                 if size == 1:
-                    # normal case
                     graph_id = members[0]
                     node = self.nodes[graph_id]
-                    x = start_x + i * COL_GAP
+
+                    # Optional: node-level strong-chain rule
+                    # "strong chain" rule: single parent and parent has only this child
+                    preds = list(G.predecessors(graph_id))
+                    if (preds and len(preds) == 1 and
+                        in_deg[graph_id] == 1 and out_deg[preds[0]] == 1 and
+                        preds[0] in placed_x):
+                        x = placed_x[preds[0]]
+                    else:
+                        x = center_x
+
                     node.coords(x, y)
                     placed_x[graph_id] = x
-                    node_depth[graph_id] = ly
-                    i += 1
+
                 else:
-                    # small “cluster” for cycle: spread around main x
-                    center_x = start_x + i * COL_GAP
-                    # e.g. horizontal spread
-                    offset_step = 30.0
-                    offsets = [ (j - (size-1)/2.0) * offset_step for j in range(size) ]
-                    for m, dx in zip(members, offsets):
-                        node = self.nodes[m]
-                        x = center_x + dx
-                        node.coords(x, y)
-                        placed_x[m] = x
-                        node_depth[m] = ly
-                    i += 1  # one slot per SCC
+                    self._layout_scc_as_tree(
+                        members, G, center_x=center_x, base_y=y)
+                    for m in members:
+                        placed_x[m] = self.nodes[m].x
+
+
+                placed_scc_x[comp_id] = center_x
+                i += 1  # one slot per SCC
 
         # 6) Temporarily place enzymes on extra row
         rest = [n for graph_id, n in self.nodes.items() if graph_id not in placed_x]
@@ -355,6 +434,37 @@ class Layout:
         self._layout_conversions()
 
         self._laid_out = True
+
+
+    def _layout_scc_as_tree(self, scc_nodes, G, center_x, base_y):
+        """
+        Layout SCC nodes as a vertical tree with horizontal branching.
+        """
+        # Subgraph restricted to SCC
+        SG = G.subgraph(scc_nodes)
+
+        # Choose root: node with max outgoing edges outside SCC
+        def score(n):
+            return sum(1 for v in G.successors(n) if v not in scc_nodes)
+
+        root = max(scc_nodes, key=score)
+
+        # BFS tree
+        tree = nx.bfs_tree(SG, root)
+
+        levels = defaultdict(list)
+        for n in tree.nodes:
+            d = nx.shortest_path_length(tree, root, n)
+            levels[d].append(n)
+
+        for depth, nodes in levels.items():
+            span = (len(nodes) - 1) * COL_GAP
+            start_x = center_x - span / 2.0
+            y = base_y + depth * LAYER_GAP * 0.6
+
+            for i, n in enumerate(nodes):
+                x = start_x + i * COL_GAP
+                self.nodes[n].coords(x, y)
 
 
     def layout_anchors(self):
