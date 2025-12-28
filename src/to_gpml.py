@@ -1,6 +1,7 @@
 # TODO: ADD Module docstring (what this file is about)
 
 import datetime
+import logging
 import re
 
 import pandas as pd
@@ -21,7 +22,7 @@ import matplotlib.pyplot as plt
 
 ############################# CONFIGURATION ###################################
 # Layout/Board
-BOARD_MARGIN = 100    # margin around everything
+BOARD_MARGIN = 200    # margin around everything
 CENTERING_FACTOR = 0.8  # between 0.0 (no centering) and 1.0 (full centering)
 LAYER_GAP = 120.0       # vertical separation
 COL_GAP = 250.0         # approximate horizontal separation
@@ -426,6 +427,8 @@ class Layout:
                         G,
                         center_x=center_x,
                         base_y=y,
+                        scc_id=comp_id,
+                        CG=CG,
                     )
                     for m in members:
                         placed_x[m] = self.nodes[m].x
@@ -476,12 +479,23 @@ class Layout:
         # 7) Compute conversion attachment points
         self._layout_conversions()
 
+        # 8) Shift whole layout into the visible canvas (fix negative/too-small X)
+        xs = [node.x for node in self.nodes.values() if node.x is not None]
+        if xs:
+            min_x = min(xs)
+            # Ensure the leftmost node is at least at BOARD_MARGIN
+            if min_x < BOARD_MARGIN:
+                shift = BOARD_MARGIN - min_x
+                for node in self.nodes.values():
+                    if node.x is not None:
+                        node.coords(node.x + shift, node.y)
+
         self._laid_out = True
 
 
-    def _layout_scc_as_tree(self, scc_nodes, G, center_x, base_y):
+    def _layout_scc_as_tree(self, scc_nodes, G, center_x, base_y, scc_id, CG):
         """
-        Layout SCC nodes as a vertical reversible chain, preserving visual order and keeping children below.
+        Layout SCC nodes as a vertical chain, expanding downwards.
         """
         # Subgraph restricted to SCC
         SG = G.subgraph(scc_nodes)
@@ -500,7 +514,7 @@ class Layout:
             d = nx.shortest_path_length(tree, root, n)
             levels[d].append(n)
        
-        # assign depths relative to root: root at base, children below etc
+        # assign depths relative to root
         for depth, nodes in levels.items():
             for n in nodes:
                 # 0.2 is arbitrary "within-SCC" depth increment
@@ -873,9 +887,21 @@ class XMLBuilder:
 def main(pathway_title, organism, 
          ID_data_file, relations_file, output_filename, 
          delimiter="\t"):
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
     # DataFrames from Data and Relations files
-    id_data_df = read_csv(ID_data_file,   sep=delimiter)
-    relations_df = read_csv(relations_file, sep=delimiter)
+    try:
+        id_data_df = read_csv(ID_data_file, sep=delimiter)
+        logging.info(f"Successfully read ID data file: {ID_data_file}")
+    except Exception as e:
+        logging.error(f"Failed to read ID data file {ID_data_file}: {e}")
+        raise
+
+    try:
+        relations_df = read_csv(relations_file, sep=delimiter)
+        logging.info(f"Successfully read relations file: {relations_file}")
+    except Exception as e:
+        logging.error(f"Failed to read relations file {relations_file}: {e}")
+        raise
 
     # Parse DF and get node and interaction objects
     builder = Parser(id_data_df, relations_df)
@@ -924,12 +950,17 @@ def read_csv(path, sep="\t", encodings=("utf-8", "utf-16", "cp1252")):
     last_err = None
     for enc in encodings:
         try:
-            return pd.read_csv(path, sep=sep, encoding=enc)
-        except UnicodeError as e:
+            df = pd.read_csv(path, sep=sep, encoding=enc)
+            logging.info(f"Successfully read {path} with encoding {enc}")
+            return df
+        except (UnicodeError, UnicodeDecodeError) as e:
+            logging.warning(f"Failed to read {path} with encoding {enc}: {e}")
             last_err = e
-        except UnicodeDecodeError as e:
+        except Exception as e:
+            logging.warning(f"Unexpected error reading {path} with encoding {enc}: {e}")
             last_err = e
     # If none of them work
+    logging.error(f"Could not read {path} with any encoding")
     raise last_err
 
 
@@ -971,12 +1002,11 @@ idgenerator = IDGenerator()
 ############################# ENTRY POINT #####################################
 
 if __name__ == "__main__":
-    name = "CA-DCA_UCA"
-    # "AlternativeBA"
-    # "7a-dehydroxylation"
-    # "CA-DCA_UCA"
-    # "CDCA-LCA_UDCA"
-    # "MurineCDCA-MCA_MDCA"
+    name = "AlternativeBA"
+    # name = "7a-dehydroxylation"
+    # name = "CA-DCA_UCA"
+    # name = "CDCA-LCA_UDCA"
+    # name = "MurineCDCA-MCA_MDCA"
 
     # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/.tsv"
     # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/_relationships.tsv"
@@ -986,12 +1016,6 @@ if __name__ == "__main__":
     relations_file = f"C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/{name}_relationships.tsv"
     output_filename = f"C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/{name}_Test.gpml"
     
-    # examples
-    # ID_data_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/CA-DCA_UCA2.tsv"
-    # relations_file = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/CA-DCA_UCA_relationships2.tsv"
-    # output_filename = "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/figures/examples/Sample3-CA-DCA_UCA.gpml"
-
-
     pathway_title = f"{name}_Test"
     organism = "Homo sapiens" ## "Homo sapiens" "Mus-musculus"
 
