@@ -1,5 +1,3 @@
-# TODO: ADD Module docstring (what this file is about)
-
 import argparse
 import os
 import yaml # pip install pyyaml
@@ -12,54 +10,6 @@ import pandas as pd
 from collections import defaultdict
 import xml.etree.ElementTree as ET  # create and manipulate XML structures
 import networkx as nx
-import matplotlib.pyplot as plt 
-
-
-# TODO: Add PEP 257 style (https://peps.python.org/pep-0257/) Docstrings 
-    #     + style guidelines (https://google.github.io/styleguide/pyguide.html)
-    # * For classes: what it represents + key attrs
-    # * For methods: what it does, args, returns, side-effects
-
-# I would like to add PEP 257 style docstrings (https://peps.python.org/pep-0257/) 
-# (https://google.github.io/styleguide/pyguide.html)
-# to all the classes and functions in the code attached.
-# In the form :
-#     """Retrieve annotation records from the LipidMaps REST API.
-
-#     Parameters
-#     ----------
-#     query_id : str
-#         LipidMaps metabolite ID (LM*), LipidMaps protein ID (LMP*),
-#         or UniProt accession used as API query key.
-
-#     Returns
-#     -------
-#     info : dict
-#         Dictionary containing KEGG, PubChem CID, HMDB, ChEBI, RefSeq,
-#         UniProt, InChI, and InChIKey fields. Returns None when no data
-#         are available or the API response is empty.
-#     """
-
-#     another example:
-#         """Merge cross-referenced annotations from LipidMaps, UniProt, and PubChem.
-    
-#         Parameters
-#         ----------
-#         lm_ids : list
-#             IDs matching LipidMaps metabolite or protein patterns.
-#         uni_ids : list
-#             IDs matching UniProt accession patterns.
-#         pchem_cids : list
-#             IDs recognized as PubChem CIDs.
-    
-#         Returns
-#         -------
-#         df_results : pandas.DataFrame
-#             DataFrame mapping each input ID to its combined annotation fields.
-#             When multiple protein IDs are taken as UniProt input: [ID1;ID2],
-#             these are returned as [ID1_RefSeq_ID1, ID1_RefSeq_ID2;
-#                                    ID2_RefSeq_ID1...].
-#         """
 
 ########################## CONSTANTS AND SETTINGS #############################
 @dataclass
@@ -144,34 +94,6 @@ def _substitute_vars(obj, vars_dict):
 ################################ NODE #########################################
 
 class Node:
-    """Represents a node in the pathway graph.
-
-    Attributes
-    ----------
-    node_type : str
-        Type of the node (e.g., 'Metabolite', 'Pathway', 'GeneProduct').
-    colour : str
-        Hex color code for the node.
-    font_weight : str or None
-        Font weight for the node label.
-    label : str
-        Display label of the node.
-    database : str or None
-        Database name associated with the node.
-    db_id : str or None
-        Database ID of the node.
-    graph_id : str
-        Unique graph ID for the node.
-    x : float or None
-        X-coordinate of the node center.
-    y : float or None
-        Y-coordinate of the node center.
-    width : float
-        Width of the node in pixels.
-    height : float
-        Height of the node in pixels.
-    """
-
     def __init__(self, node_type, label, database, db_id, colour):
         self.node_type = node_type
         self.colour = colour
@@ -238,22 +160,6 @@ class Node:
 ############################## INTERACTION ####################################
 
 class Interaction:
-    """Represents an interaction between nodes in the pathway.
-
-    Attributes
-    ----------
-    graph_id : str
-        Unique graph ID for the interaction.
-    source : Node
-        Source node of the interaction.
-    target : Node or str
-        Target node or anchor ID.
-    type : str
-        Type of interaction (e.g., 'mim-catalysis').
-    anchor_xy : tuple or None
-        Coordinates of the anchor point.
-    """
-
     def __init__(self, source, target, interaction_type):
         self.graph_id = idgenerator.new("interaction")
         self.source = source                
@@ -326,24 +232,6 @@ class Interaction:
 
     
 class ConversionInteraction(Interaction):
-    """Represents a conversion interaction with anchor points.
-
-    Attributes
-    ----------
-    anchor_id : str or None
-        ID of the anchor point.
-    _anchor_xy : tuple or None
-        Private coordinates of the anchor.
-    anchor_pos : float
-        Position along the interaction line for the anchor.
-    attachment : str
-        Attachment mode ('vertical' or 'side').
-    _src_point : dict or None
-        Source point information for GPML.
-    _tgt_point : dict or None
-        Target point information for GPML.
-    """
-
     def __init__(self, source, target, anchor_id=None):
         super().__init__(source, target, "mim-conversion")
         self.anchor_id = anchor_id
@@ -390,26 +278,6 @@ class ConversionInteraction(Interaction):
 ############################# LAYOUT CREATION #################################
 
 class Layout:
-    """Handles the layout of nodes and interactions in the pathway.
-
-    Attributes
-    ----------
-    nodes : dict
-        Dictionary of nodes keyed by graph_id.
-    interactions : list
-        List of Interaction objects.
-    boardwidth : float or None
-        Width of the board.
-    boardheight : float or None
-        Height of the board.
-    _laid_out : bool
-        Whether the layout has been computed.
-    _parent_of : dict
-        Mapping of child to parent nodes.
-    _node_depth : dict
-        Depth information for nodes.
-    """
-
     def __init__(self, nodes, interactions):
         self.nodes = nodes                # Dict of nodes, keyed by graph_id
         self.interactions = interactions  # List of Interactions
@@ -625,9 +493,7 @@ class Layout:
                 self._layout_scc_as_tree(
                     members, G,
                     center_x=center_x,
-                    base_y=y,
-                    scc_id=comp_id,
-                    CG=CG,
+                    base_y=y
                 )
                 for m in members:
                     placed_x[m] = self.nodes[m].x
@@ -712,7 +578,7 @@ class Layout:
                     node.coords(node.x + shift, node.y)
 
 
-    def _layout_scc_as_tree(self, scc_nodes, G, center_x, base_y, scc_id, CG):
+    def _layout_scc_as_tree(self, scc_nodes, G, center_x, base_y):
         """
         Layout SCC nodes as a vertical chain, expanding downwards.
         """
@@ -738,6 +604,9 @@ class Layout:
             for n in nodes:
                 # 0.2 is arbitrary "within-SCC" depth increment
                 self._node_depth[n] = self._node_depth.get(root, 0) + 0.2 * depth
+                # WARNING:
+                # This value is used only for layout decisions (arrow routing)
+                # It must NOT be interpreted as biological or topological depth
 
             span = (len(nodes) - 1) * COL_GAP
             start_x = center_x - span / 2.0
@@ -1226,17 +1095,6 @@ def read_csv(path, sep="\t", encodings=("utf-8", "utf-16", "cp1252")):
 ############################ ID GENERATOR #####################################
 
 class IDGenerator: 
-    """
-    Generate unique IDs with custom prefixes.
-    
-    Attributes
-    ----------
-        counters (defaultdict): Maintains a count of IDs by prefix.
-
-    Methods
-    -------
-        new(kind): Generates a new unique ID for the given kind.
-    """
     def __init__(self):
         self.counters = defaultdict(int)        
  
