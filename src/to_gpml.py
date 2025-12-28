@@ -20,10 +20,48 @@ import matplotlib.pyplot as plt
     # * For classes: what it represents + key attrs
     # * For methods: what it does, args, returns, side-effects
 
-# TODO: incorporate hypothetical/multi-step reaction
+# I would like to add PEP 257 style docstrings (https://peps.python.org/pep-0257/) 
+# (https://google.github.io/styleguide/pyguide.html)
+# to all the classes and functions in the code attached.
+# In the form :
+#     """Retrieve annotation records from the LipidMaps REST API.
 
+#     Parameters
+#     ----------
+#     query_id : str
+#         LipidMaps metabolite ID (LM*), LipidMaps protein ID (LMP*),
+#         or UniProt accession used as API query key.
 
-####################### GLOBAL VAR + CONFIGURATION ############################
+#     Returns
+#     -------
+#     info : dict
+#         Dictionary containing KEGG, PubChem CID, HMDB, ChEBI, RefSeq,
+#         UniProt, InChI, and InChIKey fields. Returns None when no data
+#         are available or the API response is empty.
+#     """
+
+#     another example:
+#         """Merge cross-referenced annotations from LipidMaps, UniProt, and PubChem.
+    
+#         Parameters
+#         ----------
+#         lm_ids : list
+#             IDs matching LipidMaps metabolite or protein patterns.
+#         uni_ids : list
+#             IDs matching UniProt accession patterns.
+#         pchem_cids : list
+#             IDs recognized as PubChem CIDs.
+    
+#         Returns
+#         -------
+#         df_results : pandas.DataFrame
+#             DataFrame mapping each input ID to its combined annotation fields.
+#             When multiple protein IDs are taken as UniProt input: [ID1;ID2],
+#             these are returned as [ID1_RefSeq_ID1, ID1_RefSeq_ID2;
+#                                    ID2_RefSeq_ID1...].
+#         """
+
+########################## CONSTANTS AND SETTINGS #############################
 @dataclass
 class GPMLConfig:
     pathway_title: str
@@ -48,12 +86,22 @@ ENZYME_STACK_GAP = 22.0   # vertical separation when several enzymes share an an
 # Global variables with accepted variants
 PATHWAY_DB_NAMES = {"wikipathways", "reactome", "kegg pathway"}
 
-
 ############################# CONFIGURATION ###################################
 
 def load_config(path: str) -> GPMLConfig:
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Config file not found: {path}")
+    
     with open(path, "r", encoding="utf-8") as f:
-        raw_cfg = yaml.safe_load(f)
+        raw_cfg = yaml.safe_load(f) or {}
+
+    # Validate required keys
+    missing = []
+    for key in ("pathway_title", "input", "output"):
+        if key not in raw_cfg:
+            missing.append(key)
+    if missing:
+        raise ValueError(f"Missing required config keys: {', '.join(missing)}")
 
     # variables available in templates
     vars_dict = {"name": raw_cfg.get("name", ""),}
@@ -96,6 +144,33 @@ def _substitute_vars(obj, vars_dict):
 ################################ NODE #########################################
 
 class Node:
+    """Represents a node in the pathway graph.
+
+    Attributes
+    ----------
+    node_type : str
+        Type of the node (e.g., 'Metabolite', 'Pathway', 'GeneProduct').
+    colour : str
+        Hex color code for the node.
+    font_weight : str or None
+        Font weight for the node label.
+    label : str
+        Display label of the node.
+    database : str or None
+        Database name associated with the node.
+    db_id : str or None
+        Database ID of the node.
+    graph_id : str
+        Unique graph ID for the node.
+    x : float or None
+        X-coordinate of the node center.
+    y : float or None
+        Y-coordinate of the node center.
+    width : float
+        Width of the node in pixels.
+    height : float
+        Height of the node in pixels.
+    """
 
     def __init__(self, node_type, label, database, db_id, colour):
         self.node_type = node_type
@@ -113,16 +188,25 @@ class Node:
     def coords(self, x: float, y: float) -> None: # making sure to get floats
         """Set positions as center coordinates in pixels.
 
-        Args:
-            x: Center X in pixels.
-            y: Center Y in pixels.
+        Parameters
+        ----------
+        x : float
+            Center X in pixels.
+        y : float
+            Center Y in pixels.
         """
         self.x, self.y = float(x), float(y)
         pass
 
 
     def to_gpml(self):
-        "Serialize to XML"
+        """Serialize the node to GPML XML element.
+
+        Returns
+        -------
+        xml.etree.ElementTree.Element
+            XML element representing the DataNode.
+        """
         datanode = ET.Element("DataNode", {
             "TextLabel": self.label,
             "GraphId": self.graph_id,
@@ -154,6 +238,22 @@ class Node:
 ############################## INTERACTION ####################################
 
 class Interaction:
+    """Represents an interaction between nodes in the pathway.
+
+    Attributes
+    ----------
+    graph_id : str
+        Unique graph ID for the interaction.
+    source : Node
+        Source node of the interaction.
+    target : Node or str
+        Target node or anchor ID.
+    type : str
+        Type of interaction (e.g., 'mim-catalysis').
+    anchor_xy : tuple or None
+        Coordinates of the anchor point.
+    """
+
     def __init__(self, source, target, interaction_type):
         self.graph_id = idgenerator.new("interaction")
         self.source = source                
@@ -163,13 +263,28 @@ class Interaction:
 
 
     def bind_to_anchor(self, anchor_id, xy=None):
+        """Bind the interaction to an anchor point.
+
+        Parameters
+        ----------
+        anchor_id : str
+            ID of the anchor.
+        xy : tuple, optional
+            Coordinates of the anchor.
+        """
         self.target = anchor_id
         if xy is not None:
             self.anchor_xy = xy
             
 
     def to_gpml(self):
-        """GPML for catalysis interactions."""
+        """Serialize the interaction to GPML XML element.
+
+        Returns
+        -------
+        xml.etree.ElementTree.Element
+            XML element representing the Interaction.
+        """
         inter_el = ET.Element("Interaction", {
             "GraphId": self.graph_id
         })
@@ -211,6 +326,24 @@ class Interaction:
 
     
 class ConversionInteraction(Interaction):
+    """Represents a conversion interaction with anchor points.
+
+    Attributes
+    ----------
+    anchor_id : str or None
+        ID of the anchor point.
+    _anchor_xy : tuple or None
+        Private coordinates of the anchor.
+    anchor_pos : float
+        Position along the interaction line for the anchor.
+    attachment : str
+        Attachment mode ('vertical' or 'side').
+    _src_point : dict or None
+        Source point information for GPML.
+    _tgt_point : dict or None
+        Target point information for GPML.
+    """
+
     def __init__(self, source, target, anchor_id=None):
         super().__init__(source, target, "mim-conversion")
         self.anchor_id = anchor_id
@@ -224,7 +357,13 @@ class ConversionInteraction(Interaction):
 
 
     def to_gpml(self):
-        """GPML for an anchored conversion."""
+        """Serialize the conversion interaction to GPML XML element.
+
+        Returns
+        -------
+        xml.etree.ElementTree.Element
+            XML element representing the Interaction.
+        """
         inter_el = ET.Element("Interaction", {
             "GraphId": self.graph_id
         })
@@ -251,6 +390,26 @@ class ConversionInteraction(Interaction):
 ############################# LAYOUT CREATION #################################
 
 class Layout:
+    """Handles the layout of nodes and interactions in the pathway.
+
+    Attributes
+    ----------
+    nodes : dict
+        Dictionary of nodes keyed by graph_id.
+    interactions : list
+        List of Interaction objects.
+    boardwidth : float or None
+        Width of the board.
+    boardheight : float or None
+        Height of the board.
+    _laid_out : bool
+        Whether the layout has been computed.
+    _parent_of : dict
+        Mapping of child to parent nodes.
+    _node_depth : dict
+        Depth information for nodes.
+    """
+
     def __init__(self, nodes, interactions):
         self.nodes = nodes                # Dict of nodes, keyed by graph_id
         self.interactions = interactions  # List of Interactions
@@ -737,7 +896,7 @@ class Parser:
             self.id_data_df.columns[0:3])
         self.source_col, self.target_col, self.catalyser_col = (
             self.relations_df.columns[0:3])
-
+        self._clean_id_metadata()
 
     def _clean_field(self, value, *, empty_to_none=True):
         """Normalize string-like fields from TSV/CSV."""
@@ -748,6 +907,14 @@ class Parser:
         if empty_to_none and value == "":
             return None
         return value
+
+
+    def _clean_id_metadata(self):
+        """Normalize key columns in ID metadata (strip spaces, etc.)."""
+        for col in (self.id_col, self.db_col, self.name_col):
+            self.id_data_df[col] = self.id_data_df[col].apply(
+                lambda v: self._clean_field(v, empty_to_none=False)
+            )
 
 
     def _is_pathway(self, node_id):
@@ -793,6 +960,7 @@ class Parser:
         # Find metadata row
         match = self.id_data_df[self.id_data_df[self.id_col] == node_id]
         if match.empty:
+            logging.warning(f"ID '{node_id}' not found in ID metadata; skipping node")
             return None
         
         info = match.iloc[0]
@@ -848,6 +1016,7 @@ class Parser:
         # Find metadata row
         match = self.id_data_df[self.id_data_df[self.id_col] == catal_id]
         if match.empty:
+            logging.warning(f"ID '{catal_id}' not found in ID metadata; skipping node")
             return None
         
         info = match.iloc[0]
@@ -966,20 +1135,12 @@ def main(pathway_title, organism,
          ID_data_file, relations_file, output_filename, 
          delimiter="\t"):
     """Main function to build GPML from ID metadata and relations files."""
-    # DataFrames from Data and Relations files
-    try:
-        id_data_df = read_csv(ID_data_file, sep=delimiter)
-        logging.info(f"Successfully read ID data file: {ID_data_file}")
-    except Exception as e:
-        logging.error(f"Failed to read ID data file {ID_data_file}: {e}")
-        raise
+    id_data_df = read_csv(ID_data_file, sep=delimiter)
+    relations_df = read_csv(relations_file, sep=delimiter)
 
-    try:
-        relations_df = read_csv(relations_file, sep=delimiter)
-        logging.info(f"Successfully read relations file: {relations_file}")
-    except Exception as e:
-        logging.error(f"Failed to read relations file {relations_file}: {e}")
-        raise
+    # Strip spaces in ID_metadata
+    for col in id_data_df.select_dtypes(include="object").columns:
+        id_data_df[col] = id_data_df[col].str.strip()
 
     # Parse DF and get node and interaction objects
     builder = Parser(id_data_df, relations_df)
@@ -1014,31 +1175,51 @@ def main(pathway_title, organism,
     )
     root = xml_builder.to_etree()
     tree = ET.ElementTree(xml_builder.to_etree())
-    
+
     try:
-        ET.indent(tree, space="  ") 
+        ET.indent(tree, space="  ")
     except AttributeError:
         pass
-    tree.write(output_filename, encoding="utf-8", xml_declaration=True)
+
+    try:
+        tree.write(output_filename, encoding="utf-8", xml_declaration=True)
+        logging.info(f"Wrote GPML to...\n  {output_filename}")
+    except Exception:
+        logging.exception(f"Failed to write GPML file {output_filename}")
+        raise
 
 
 ########################## Helper Functions ###################################
 
 def read_csv(path, sep="\t", encodings=("utf-8", "utf-16", "cp1252")):
+    if not os.path.isfile(path):
+        logging.error(f"File not found: {path}")
+        raise FileNotFoundError(path)
+
     last_err = None
+    failed = []  # (encoding, error_message)
+
     for enc in encodings:
         try:
             df = pd.read_csv(path, sep=sep, encoding=enc)
-            logging.info(f"Successfully read {path} with encoding {enc}")
+            logging.info(f"Successfully read...\n  {path}\n  Encoding {enc}")
             return df
         except (UnicodeError, UnicodeDecodeError) as e:
-            logging.warning(f"Failed to read {path} with encoding {enc}: {e}")
+            failed.append((enc, str(e)))
             last_err = e
         except Exception as e:
-            logging.warning(f"Unexpected error reading {path} with encoding {enc}: {e}")
+            failed.append((enc, str(e)))
             last_err = e
-    # If none of them work
-    logging.error(f"Could not read {path} with any encoding")
+
+    # If none of them work, log error and raise last exception
+    tried = ", ".join(enc for enc, _ in failed) or ", ".join(encodings)
+    logging.error(
+        f"Could not read {path} with any encoding (tried: {tried})"
+    )
+    # Debug lines for each failed encoding
+    for enc, msg in failed:
+        logging.debug(f"Encoding {enc} failed for {path}: {msg}")
+
     raise last_err
 
 
@@ -1083,15 +1264,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Build GPML pathway from ID_metadata and relations tables."
     )
-    parser.add_argument(
-        "-c", "--config",
-        required=True,
-        help="Path to YAML configuration file."
-    )
+    parser.add_argument("-c", "--config", required=True,
+                        help="Path to YAML configuration file.")
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
-    run_from_config(cfg)
+    try:
+        cfg = load_config(args.config)
+        run_from_config(cfg)
+    except FileNotFoundError as e:
+        logging.error(str(e))
+        raise
+    except ValueError as e:
+        logging.error(f"Configuration error: {e}")
+        raise
 
 
 ## NOTES:
