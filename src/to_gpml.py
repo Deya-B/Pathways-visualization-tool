@@ -1,5 +1,9 @@
 # TODO: ADD Module docstring (what this file is about)
 
+import argparse
+import os
+import yaml # pip install pyyaml
+from dataclasses import dataclass
 import datetime
 import logging
 import re
@@ -16,11 +20,21 @@ import matplotlib.pyplot as plt
     # * For classes: what it represents + key attrs
     # * For methods: what it does, args, returns, side-effects
 
-# TODO: incorporate a yaml config file
 # TODO: incorporate hypothetical/multi-step reaction
 
 
-############################# CONFIGURATION ###################################
+####################### GLOBAL VAR + CONFIGURATION ############################
+@dataclass
+class GPMLConfig:
+    pathway_title: str
+    organism: str
+    id_data_file: str
+    relations_file: str
+    output_filename: str
+    delimiter: str = "\t"
+    logging_level: str = "INFO"
+    logging_format: str = "%(levelname)s: %(message)s"
+
 # Layout/Board
 BOARD_MARGIN = 200    # margin around everything
 CENTERING_FACTOR = 0.8  # between 0.0 (no centering) and 1.0 (full centering)
@@ -33,6 +47,51 @@ ENZYME_STACK_GAP = 22.0   # vertical separation when several enzymes share an an
 
 # Global variables with accepted variants
 PATHWAY_DB_NAMES = {"wikipathways", "reactome", "kegg pathway"}
+
+
+############################# CONFIGURATION ###################################
+
+def load_config(path: str) -> GPMLConfig:
+    with open(path, "r", encoding="utf-8") as f:
+        raw_cfg = yaml.safe_load(f)
+
+    # variables available in templates
+    vars_dict = {"name": raw_cfg.get("name", ""),}
+
+    cfg = _substitute_vars(raw_cfg, vars_dict)
+
+    in_cfg = cfg.get("input", {})
+    out_cfg = cfg.get("output", {})
+    log_cfg = cfg.get("logging", {})
+
+    in_folder = in_cfg.get("folder", "")
+    out_folder = out_cfg.get("folder", "")
+
+    id_path = os.path.join(in_folder, in_cfg["id_data_file"])
+    rel_path = os.path.join(in_folder, in_cfg["relations_file"])
+    out_path = os.path.join(out_folder, out_cfg["filename"])
+
+    return GPMLConfig(
+        pathway_title=cfg["pathway_title"],
+        organism=cfg.get("organism", "Homo sapiens"),
+        id_data_file=id_path,
+        relations_file=rel_path,
+        output_filename=out_path,
+        delimiter=in_cfg.get("delimiter", "\t"),
+        logging_level=log_cfg.get("level", "INFO"),
+        logging_format=log_cfg.get("format", "%(levelname)s: %(message)s"),
+    )
+
+
+def _substitute_vars(obj, vars_dict):
+    if isinstance(obj, str):
+        return obj.format(**vars_dict)
+    if isinstance(obj, dict):
+        return {k: _substitute_vars(v, vars_dict) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_substitute_vars(v, vars_dict) for v in obj]
+    return obj
+
 
 ################################ NODE #########################################
 
@@ -885,10 +944,28 @@ class XMLBuilder:
 
 ################################ MAIN #########################################
 
+def run_from_config(config: GPMLConfig):
+    setup_logging(config)
+    main(
+        pathway_title=config.pathway_title,
+        organism=config.organism,
+        ID_data_file=config.id_data_file,
+        relations_file=config.relations_file,
+        output_filename=config.output_filename,
+        delimiter=config.delimiter,
+    )
+
+
+def setup_logging(config: GPMLConfig):
+    level_name = (config.logging_level or "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(level=level, format=config.logging_format)
+
+
 def main(pathway_title, organism, 
          ID_data_file, relations_file, output_filename, 
          delimiter="\t"):
-    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+    """Main function to build GPML from ID metadata and relations files."""
     # DataFrames from Data and Relations files
     try:
         id_data_df = read_csv(ID_data_file, sep=delimiter)
@@ -1003,27 +1080,18 @@ idgenerator = IDGenerator()
 ############################# ENTRY POINT #####################################
 
 if __name__ == "__main__":
-    # name = "AlternativeBA"
-    # name = "7a-dehydroxylation"
-    # name = "CA-DCA_UCA"
-    # name = "CDCA-LCA_UDCA"
-    name = "MurineCDCA-MCA_MDCA"
+    parser = argparse.ArgumentParser(
+        description="Build GPML pathway from ID_metadata and relations tables."
+    )
+    parser.add_argument(
+        "-c", "--config",
+        required=True,
+        help="Path to YAML configuration file."
+    )
+    args = parser.parse_args()
 
-    # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/.tsv"
-    # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/_relationships.tsv"
-    # output_filename = "c:/Users/dborrotoa/Desktop/TFM/src/examples/gpml/ruta.gpml"
-    #home
-    ID_data_file = f"C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/{name}.tsv"
-    relations_file = f"C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/{name}_relationships.tsv"
-    output_filename = f"C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/{name}_Test.gpml"
-    
-    pathway_title = f"{name}_Test"
-    organism = "Homo sapiens" ## "Homo sapiens" "Mus-musculus"
-
-    main(pathway_title, organism, 
-         ID_data_file, relations_file, output_filename)
-
-
+    cfg = load_config(args.config)
+    run_from_config(cfg)
 
 
 ## NOTES:
