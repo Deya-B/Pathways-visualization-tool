@@ -222,131 +222,103 @@ class Layout:
 
 
     def layout_positions(self):
-        """Pre-layout positions: Assign x,y to metabolites and pathway nodes only."""
-        G = self._build_skeleton_graph()
-        self._parent_of = self._compute_parent_map(G)
-        in_deg, out_deg = self._precompute_degrees(G)
-
-        sccs, node2scc, CG, topo_scc = self._build_scc_condensation(G)
-        depth_scc, scc_layers = self._compute_scc_depths(CG, topo_scc)
-        layers, node_depth = self._build_node_layers(sccs, scc_layers)
-
-        placed_x, placed_scc_x = self._place_layers(
-            G, CG, sccs, node2scc, layers, in_deg, out_deg
-        )
-
-        self._fix_vertical_single_parent_children(G, CG, node2scc)
-        self._place_remaining_enzymes(placed_x, layers)
-        self._node_depth = node_depth
-        self._layout_conversions()
-        self._shift_layout_into_view()
-        self._laid_out = True
-
-
-# Graph construction helpers
-    def _build_skeleton_graph(self):
-        """Skeleton graph with metabolite/pathway nodes and conversion edges only."""
+        """Pre-layout positions: Assign x,y to metabolites and pathways 
+        nodes only."""
+       # Skeleton graph with source/target nodes and conversion interactions only
         G = nx.DiGraph()
+
         for node in self.nodes.values():
-            if node.node_type == "GeneProduct":
+            if node.node_type == "GeneProduct": # Ignore enzymes for now
                 continue
             G.add_node(node.graph_id)
+
         for inter in self.interactions:
             if isinstance(inter, ConversionInteraction):
                 G.add_edge(inter.source.graph_id, inter.target.graph_id)
-        return G
 
-
-    def _compute_parent_map(self, G):
-        """First parent per node (used later for vertical adjustments)."""
         parent_of = {}
         for u, v in G.edges:
             if v not in parent_of:
                 parent_of[v] = u
-        return parent_of
 
+        self._parent_of = parent_of
 
-    def _precompute_degrees(self, G):
-        """Precompute in/out degree maps for chain detection."""
+        # Precompute degrees for chain detection
         in_deg = {n: G.in_degree(n) for n in G.nodes}
         out_deg = {n: G.out_degree(n) for n in G.nodes}
-        return in_deg, out_deg
 
+    # Approach:   
+    # Collapse each strongly connected component (SCC) (i.e. cycle) into a 
+    #   single super‑node.
+    # Run the topological‑depth layout on this condensation DAG.
+    # Inside each SCC:
+        # If it has just 1 node, place it exactly at its layer position.
+        # If it has multiple nodes (cycle), place its members with a simple
+        #   local layout (e.g. small horizontal/vertical cluster around that 
+        #   layer position).
 
-    def _build_scc_condensation(self, G):
-        """SCCs and condensation DAG."""
-        sccs = list(nx.strongly_connected_components(G))
+        # 1) Strongly connected components (SCC)
+        sccs = list(nx.strongly_connected_components(G))  # set of node ids per SCC
+        # Map node -> scc_id (index)
         node2scc = {}
         for idx, comp in enumerate(sccs):
             for n in comp:
                 node2scc[n] = idx
-        CG = nx.condensation(G, sccs)
+
+        # 2) Condensation graph (DAG of SCCs)
+        CG = nx.condensation(G, sccs)  # nodes are 0..len(sccs)-1, each is a SCC
+        # Topological order on SCC DAG
         topo_scc = list(nx.topological_sort(CG))
-        return sccs, node2scc, CG, topo_scc
 
-
-    def _compute_scc_depths(self, CG, topo_scc):
-        """Depth per SCC (longest path) and SCC layers."""
+        # 3) Depth per SCC (longest path)
         depth_scc = {c: 0 for c in topo_scc}
         for u in topo_scc:
             for v in CG.successors(u):
                 depth_scc[v] = max(depth_scc[v], depth_scc[u] + 1)
 
+        # 4) Layers of SCCs, then expand to node layers
         max_depth = max(depth_scc.values(), default=0)
         scc_layers = [[] for _ in range(max_depth + 1)]
         for comp_id, d in depth_scc.items():
             scc_layers[d].append(comp_id)
-        return depth_scc, scc_layers
 
-
-    def _build_node_layers(self, sccs, scc_layers):
-        """Expand SCC layers to node layers and assign base node depths."""
+        # Turn into node-based layers: each SCC contributes its members
         layers = []
-        node_depth = {}
+        node_depth = {}  # graph_id -> numeric depth (can be non-integer)
+
         for d, comps in enumerate(scc_layers):
             layer_nodes = []
             for comp_id in comps:
                 members = list(sccs[comp_id])
                 layer_nodes.extend(members)
+                # inside the SCC, give each node a slight offset so edges
+                # have a direction even within cycles
                 if len(members) == 1:
                     node_depth[members[0]] = float(d)
                 else:
+                    # temporarily same base depth; refined after SCC layout
                     for n in members:
                         node_depth[n] = float(d)
             layers.append(layer_nodes)
-        return layers, node_depth
 
-
-# Placement helpers
-    def _place_layers(self, G, CG, sccs, node2scc, layers, in_deg, out_deg):
-        """Horizontal spacing, SCC ordering, SCC and node placement."""
+        # 5) Horizontal spacing & placement
         k_max = max((len(L) for L in layers), default=1)
         span_max = max(0, (k_max - 1) * COL_GAP)
 
-        placed_x = {}
-        placed_scc_x = {}
-        scc_child_count = defaultdict(int)
-
-        scc_local_depth = self._compute_scc_local_depth(CG)
-
-        for ly, layer_nodes in enumerate(layers):
-            if not layer_nodes:
-                continue
-            self._place_single_layer(
-                G, CG, sccs, node2scc, layer_nodes,
-                ly, span_max, in_deg, out_deg,
-                scc_local_depth, placed_x, placed_scc_x, scc_child_count
-            )
-
-        return placed_x, placed_scc_x
+        placed_x = {}  # node_id -> x
+        placed_scc_x = {}   # scc_id  -> x
+        scc_child_count = defaultdict(int)  # parent_scc_id -> how many snapped children
 
 
-    def _compute_scc_local_depth(self, CG):
-        """Local depth of each SCC within its parent’s subgraph."""
+        # Local depth of each SCC within its parent’s subgraph (for ordering)
         scc_local_depth = defaultdict(int)
+
+        # Simple BFS from each SCC to assign increasing depth to descendants
         for s in CG.nodes:
+            # skip if no outgoing edges
             if CG.out_degree(s) == 0:
                 continue
+            # BFS from s
             queue = [(s, 0)]
             seen = {s}
             while queue:
@@ -354,144 +326,171 @@ class Layout:
                 for v in CG.successors(u):
                     if v not in seen:
                         seen.add(v)
+                        # depth relative to s
                         scc_local_depth[v] = max(scc_local_depth[v], d + 1)
                         queue.append((v, d + 1))
-        return scc_local_depth
 
 
-    def _place_single_layer(self, G, CG, sccs, node2scc, layer_nodes, ly, span_max,
-        in_deg, out_deg, scc_local_depth, placed_x, placed_scc_x, scc_child_count):
-        """Place nodes in a single layer."""
-        k = len(layer_nodes)
-        span = max(0, (k - 1) * COL_GAP)
-        start_x = BOARD_MARGIN + CENTERING_FACTOR * (span_max - span) / 2.0
-        y = 80 + ly * LAYER_GAP
+        for ly, layer_nodes in enumerate(layers):
+            if not layer_nodes:
+                continue
 
-        # Group nodes in this layer by SCC
-        by_scc = {}
-        for n in layer_nodes:
-            by_scc.setdefault(node2scc[n], []).append(n)
+            # Compute row geometry
+            k = len(layer_nodes)
+            span = max(0, (k - 1) * COL_GAP)
+            start_x = BOARD_MARGIN + CENTERING_FACTOR * (span_max - span) / 2.0
+            y = 80 + ly * LAYER_GAP
 
-        def scc_parent_avg_x(scc_id):
-            parent_sccs = list(CG.predecessors(scc_id))
-            xs = []
-            for ps in parent_sccs:
-                if ps in placed_scc_x:
-                    xs.append(placed_scc_x[ps])
+            # Group nodes in this layer by SCC
+            by_scc = {}
+            for n in layer_nodes:
+                by_scc.setdefault(node2scc[n], []).append(n)
+
+            # Helper: average parent x per SCC (using condensation graph)
+            def scc_parent_avg_x(scc_id):
+                parent_sccs = list(CG.predecessors(scc_id))
+                xs = []
+                for ps in parent_sccs:
+                    if ps in placed_scc_x:
+                        xs.append(placed_scc_x[ps])
+                    else:
+                        # fallback: use individual parent nodes if any are placed
+                        for n in sccs[ps]:
+                            preds = list(G.predecessors(n))
+                            xs.extend(placed_x[p] for p in preds if p in placed_x)
+                return sum(xs) / len(xs) if xs else float("inf")
+
+            # Order SCC blocks by their parent barycenter
+            scc_ids_in_layer = list(by_scc.keys())
+            scc_ids_in_layer.sort(key=scc_parent_avg_x)
+
+            i = 0
+            for comp_id in scc_ids_in_layer:
+                members = by_scc[comp_id]
+                size = len(members)
+
+                # Default column-based x for this SCC
+                col_x = start_x + i * COL_GAP
+
+                # Strong-chain rule at SCC level:
+                # if SCC has exactly one incoming SCC and that parent SCC
+                # has only this SCC as outgoing, snap under parent SCC
+                parent_sccs = list(CG.predecessors(comp_id))
+
+                if len(parent_sccs) == 1 and parent_sccs[0] in placed_scc_x:
+                    p = parent_sccs[0]
+                    
+                    # Children of p in this layer, sorted by local depth then id
+                    siblings = [
+                        cid for cid in scc_ids_in_layer
+                        if p in CG.predecessors(cid)
+                    ]
+                    siblings.sort(key=lambda cid: (scc_local_depth[cid], cid))
+
+                    # Index of this comp_id among its siblings
+                    idx = siblings.index(comp_id)
+
+                    if idx == 0:
+                        # first child: exactly under parent
+                        center_x = placed_scc_x[p]
+                    else:
+                        # next children: alternate left/right, moving outward
+                        offset_index = (idx + 1) // 2
+                        offset = offset_index * COL_GAP
+                        sign = -1 if idx % 2 == 1 else 1
+                        center_x = placed_scc_x[p] + sign * offset
+
+                    scc_child_count[p] += 1
                 else:
-                    for n in sccs[ps]:
-                        preds = list(G.predecessors(n))
-                        xs.extend(placed_x[p] for p in preds if p in placed_x)
-            return sum(xs) / len(xs) if xs else float("inf")
+                    center_x = col_x
 
-        scc_ids_in_layer = list(by_scc.keys())
-        scc_ids_in_layer.sort(key=scc_parent_avg_x)
+                if size == 1:
+                    graph_id = members[0]
+                    node = self.nodes[graph_id]
 
-        i = 0
-        for comp_id in scc_ids_in_layer:
-            members = by_scc[comp_id]
-            size = len(members)
-            col_x = start_x + i * COL_GAP
+                    # Optional: node-level strong-chain rule
+                    # "strong chain" rule: single parent and parent has only this child
+                    preds = list(G.predecessors(graph_id))
+                    if (preds and len(preds) == 1 and
+                        in_deg[graph_id] == 1 and out_deg[preds[0]] == 1 and
+                        preds[0] in placed_x):
+                        x = placed_x[preds[0]]
+                    else:
+                        x = center_x
 
-            center_x = self._choose_scc_center_x(
-                CG, comp_id, col_x, scc_ids_in_layer,
-                scc_local_depth, placed_scc_x, scc_child_count
-            )
+                    node.coords(x, y)
+                    placed_x[graph_id] = x
 
-            if size == 1:
-                self._place_singleton_in_scc(
-                    G, members[0], center_x, y,
-                    in_deg, out_deg, placed_x
-                )
-            else:
-                self._layout_scc_as_tree(
-                    members, G,
-                    center_x=center_x,
-                    base_y=y,
-                    scc_id=comp_id,
-                    CG=CG,
-                )
-                for m in members:
-                    placed_x[m] = self.nodes[m].x
-
-            placed_scc_x[comp_id] = center_x
-            i += 1
+                else:
+                    self._layout_scc_as_tree(
+                        members, 
+                        G,
+                        center_x=center_x,
+                        base_y=y,
+                        scc_id=comp_id,
+                        CG=CG,
+                    )
+                    for m in members:
+                        placed_x[m] = self.nodes[m].x
 
 
-    def _choose_scc_center_x(
-        self, CG, comp_id, col_x, scc_ids_in_layer,
-        scc_local_depth, placed_scc_x, scc_child_count
-    ):
-        parent_sccs = list(CG.predecessors(comp_id))
-        if len(parent_sccs) == 1 and parent_sccs[0] in placed_scc_x:
-            p = parent_sccs[0]
-            siblings = [cid for cid in scc_ids_in_layer if p in CG.predecessors(cid)]
-            siblings.sort(key=lambda cid: (scc_local_depth[cid], cid))
-            idx = siblings.index(comp_id)
-            if idx == 0:
-                center_x = placed_scc_x[p]
-            else:
-                offset_index = (idx + 1) // 2
-                offset = offset_index * COL_GAP
-                sign = -1 if idx % 2 == 1 else 1
-                center_x = placed_scc_x[p] + sign * offset
-            scc_child_count[p] += 1
-            return center_x
-        return col_x
+                placed_scc_x[comp_id] = center_x
+                i += 1  # one slot per SCC
 
 
-    def _place_singleton_in_scc(self, G, graph_id, center_x, y, 
-                                in_deg, out_deg, placed_x):
-        node = self.nodes[graph_id]
-        preds = list(G.predecessors(graph_id))
-        if (preds and len(preds) == 1 and
-            in_deg[graph_id] == 1 and out_deg[preds[0]] == 1 and
-            preds[0] in placed_x):
-            x = placed_x[preds[0]]
-        else:
-            x = center_x
-        node.coords(x, y)
-        placed_x[graph_id] = x
-
-
-# Post‑placement helpers
-    def _fix_vertical_single_parent_children(self, G, CG, node2scc):
+        # 5.8) Fix vertical placement of non-SCC single-parent children
         for child, parent in self._parent_of.items():
+            # Skip SCC-internal nodes
             if node2scc[child] == node2scc[parent]:
                 continue
+
             parent_scc = node2scc[parent]
+            
             if CG.in_degree(parent_scc) == 0:
                 continue
+
             if G.in_degree(child) != 1:
                 continue
 
             child_node = self.nodes[child]
             parent_node = self.nodes[parent]
+
             if parent_node.y is None:
                 continue
+
+            # Force child below parent
             if child_node.y <= parent_node.y:
-                child_node.coords(child_node.x, parent_node.y + LAYER_GAP)
+                child_node.coords(
+                    child_node.x,
+                    parent_node.y + LAYER_GAP
+                )
 
 
-    def _place_remaining_enzymes(self, placed_x, layers):
+        # 6) Temporarily place enzymes on extra row
         rest = [n for graph_id, n in self.nodes.items() if graph_id not in placed_x]
         for j, node in enumerate(rest):
             node.coords(
-                BOARD_MARGIN + j * COL_GAP,
-                BOARD_MARGIN + (len(layers) + 1) * LAYER_GAP
-            )
+                BOARD_MARGIN + j * COL_GAP, 
+                BOARD_MARGIN + (len(layers) + 1) * LAYER_GAP)
 
+        # Save depths
+        self._node_depth = node_depth
 
-    def _shift_layout_into_view(self):
+        # 7) Compute conversion attachment points
+        self._layout_conversions()
+
+        # 8) Shift whole layout into the visible canvas (fix negative/too-small X)
         xs = [node.x for node in self.nodes.values() if node.x is not None]
-        if not xs:
-            return
-        min_x = min(xs)
-        if min_x < BOARD_MARGIN:
-            shift = BOARD_MARGIN - min_x
-            for node in self.nodes.values():
-                if node.x is not None:
-                    node.coords(node.x + shift, node.y)
+        if xs:
+            min_x = min(xs)
+            # Ensure the leftmost node is at least at BOARD_MARGIN
+            if min_x < BOARD_MARGIN:
+                shift = BOARD_MARGIN - min_x
+                for node in self.nodes.values():
+                    if node.x is not None:
+                        node.coords(node.x + shift, node.y)
+
+        self._laid_out = True
 
 
     def _layout_scc_as_tree(self, scc_nodes, G, center_x, base_y, scc_id, CG):
@@ -1005,9 +1004,9 @@ idgenerator = IDGenerator()
 if __name__ == "__main__":
     # name = "AlternativeBA"
     # name = "7a-dehydroxylation"
-    # name = "CA-DCA_UCA"
+    name = "CA-DCA_UCA"
     # name = "CDCA-LCA_UDCA"
-    name = "MurineCDCA-MCA_MDCA"
+    # name = "MurineCDCA-MCA_MDCA"
 
     # ID_data_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/.tsv"
     # relations_file = "c:/Users/dborrotoa/Desktop/TFM/src/examples/data/_relationships.tsv"
