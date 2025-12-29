@@ -2,9 +2,32 @@ import xml.etree.ElementTree as ET
 
 from .idgen import idgenerator
 
-
 class Node:
+    """Graph node representing a metabolite, pathway, or gene product.
+
+    Each node has a unique graph identifier, visual properties (size,
+    color, font weight), and optional database cross-reference metadata.
+    """
+
     def __init__(self, node_type, label, database, db_id, colour):
+        """Initialize a pathway node with visual and identifier metadata.
+
+        Parameters
+        ----------
+        node_type : str
+            Node type label used in GPML (e.g. "Metabolite",
+            "Pathway", "GeneProduct").
+        label : str
+            Text label shown in the diagram.
+        database : str or None
+            Name of the external database for cross-reference (e.g.
+            "KEGG", "UniProt"), or None if not available.
+        db_id : str or None
+            Identifier in the external database, or None if not
+            available.
+        colour : str
+            Hex color string used for the node outline/fill.
+        """
         self.node_type = node_type
         self.colour = colour
         self.font_weight = None
@@ -68,7 +91,26 @@ class Node:
 
 
 class Interaction:
+    """Directed interaction between two nodes or between a node and an anchor.
+
+    Interactions include simple edges as well as catalysis links that
+    connect enzyme nodes to conversion anchors.
+    """
+
     def __init__(self, source, target, interaction_type):
+        """Initialize an interaction edge.
+
+        Parameters
+        ----------
+        source : Node
+            Source node of the interaction.
+        target : Node or str
+            Target node or anchor identifier, depending on the
+            interaction type.
+        interaction_type : str or None
+            Interaction type label (e.g. "mim-catalysis"). Case is
+            normalized to lowercase; None is treated as an empty string.
+        """
         self.graph_id = idgenerator.new("interaction")
         self.source = source                
         self.target = target               
@@ -92,7 +134,7 @@ class Interaction:
             
 
     def to_gpml(self):
-        """Serialize the interaction to GPML XML element.
+        """Serialize the catalytic interaction to GPML XML element.
 
         Returns
         -------
@@ -140,7 +182,26 @@ class Interaction:
 
     
 class ConversionInteraction(Interaction):
+    """Conversion interaction between two nodes with a shared anchor.
+
+    This specialized interaction models metabolite-to-metabolite
+    conversions, storing anchor geometry and GPML point metadata that
+    are computed later by the layout algorithm.
+    """
+
     def __init__(self, source, target, anchor_id=None):
+        """Initialize a conversion interaction.
+
+        Parameters
+        ----------
+        source : Node
+            Source node of the conversion.
+        target : Node
+            Target node of the conversion.
+        anchor_id : str, optional
+            Pre-existing anchor GraphId, if any. If None, the layout
+            logic will create one and set it later.
+        """
         super().__init__(source, target, "mim-conversion")
         self.anchor_id = anchor_id
         self._anchor_xy = None # private: to be computed by Layout class

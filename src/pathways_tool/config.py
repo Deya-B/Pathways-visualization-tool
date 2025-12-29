@@ -5,6 +5,28 @@ from dataclasses import dataclass
 
 @dataclass
 class GPMLConfig:
+    """Configuration for building a GPML pathway.
+
+    Attributes
+    ----------
+    pathway_title : str
+        Title to use for the GPML pathway.
+    organism : str
+        Organism name to record in the GPML metadata.
+    id_data_file : str
+        Path to the TSV file with ID metadata (metabolites, pathways, enzymes).
+    relations_file : str
+        Path to the TSV file describing source–target relationships.
+    output_filename : str
+        Path where the resulting GPML file will be written.
+    delimiter : str, optional
+        Field delimiter used in the input TSV files, by default "\\t".
+    logging_level : str, optional
+        Logging level name (e.g., "INFO", "DEBUG"), by default "INFO".
+    logging_format : str, optional
+        Logging format string passed to logging.basicConfig, by default
+        "%(levelname)s: %(message)s".
+    """
     pathway_title: str
     organism: str
     id_data_file: str
@@ -16,7 +38,32 @@ class GPMLConfig:
 
 
 def load_config(path: str) -> GPMLConfig:
-    """... {name} substitution implemented ..."""
+    """Load YAML configuration, apply {name} templates, and build GPMLConfig.
+
+    The raw YAML configuration may contain `{name}` placeholders in string
+    values. These are expanded using the optional top-level ``name`` field
+    before input/output paths and logging options are resolved.
+
+    Parameters
+    ----------
+    path : str
+        Path to a YAML configuration file describing input, output, and
+        logging settings.
+
+    Returns
+    -------
+    GPMLConfig
+        Normalized configuration with resolved input/output file paths,
+        logging options, and any `{name}` templates substituted.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the configuration file does not exist.
+    ValueError
+        If required top-level keys (\"pathway_title\", \"input\", \"output\")
+        are missing from the configuration.
+    """
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Config file not found: {path}")
     
@@ -60,6 +107,23 @@ def load_config(path: str) -> GPMLConfig:
 
 
 def _substitute_vars(obj, vars_dict):
+    """Recursively substitute template variables in a nested config object.
+
+    Parameters
+    ----------
+    obj : Any
+        Configuration structure (string, dict, list, or other) potentially
+        containing `{name}`-style format fields.
+    vars_dict : dict
+        Mapping of placeholder names to replacement values used with
+        `str.format`.
+
+    Returns
+    -------
+    Any
+        Object of the same shape as `obj` with string values formatted
+        using `vars_dict`.
+    """
     if isinstance(obj, str):
         return obj.format(**vars_dict)
     if isinstance(obj, dict):
@@ -70,7 +134,14 @@ def _substitute_vars(obj, vars_dict):
 
 
 def setup_logging(config: GPMLConfig):
+    """Configure the root logger from a GPMLConfig instance.
+
+    Parameters
+    ----------
+    config : GPMLConfig
+        Configuration object providing the logging level name and
+        logging format string used to initialize `logging.basicConfig`.
+    """
     level_name = (config.logging_level or "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
     logging.basicConfig(level=level, format=config.logging_format)
-

@@ -4,6 +4,7 @@ import networkx as nx
 from .model import ConversionInteraction
 from .idgen import idgenerator
 
+
 # Layout/Board Constants
 BOARD_MARGIN = 200    # margin around everything
 CENTERING_FACTOR = 0.8  # between 0.0 (no centering) and 1.0 (full centering)
@@ -14,8 +15,26 @@ ENZYME_OFFSET_X = 180.0     # horizontal distance from anchor to enzyme
 ENZYME_OFFSET_Y = 40.0      # horizontal distance from anchor to enzyme
 ENZYME_STACK_GAP = 22.0   # vertical separation when several enzymes share an anchor
 
+
 class Layout:
+    """Compute 2D positions for nodes and interactions in a pathway graph.
+
+    The layout algorithm arranges metabolite and pathway nodes in layers,
+    introduces conversion anchors, routes conversion edges, and places
+    enzyme (catalysis) nodes near their associated anchors.
+    """
+
     def __init__(self, nodes, interactions):
+        """Initialize the layout with graph nodes and interactions.
+
+        Parameters
+        ----------
+        nodes : dict
+            Mapping from graph ID to Node instances.
+        interactions : list
+            List of Interaction/ConversionInteraction instances that
+            connect the nodes.
+        """
         self.nodes = nodes                # Dict of nodes, keyed by graph_id
         self.interactions = interactions  # List of Interactions
         self.boardwidth = None
@@ -26,8 +45,23 @@ class Layout:
 
 
     def compute_anchor_xy(self, interactions):
-        """Compute anchor (ax, ay) for a given Interaction. Based on the
-        source and target nodes positions."""
+        """Compute the coordinates of a conversion anchor.
+
+        The anchor is placed along the line between source and target,
+        using the interaction's ``anchor_pos`` as a relative position
+        factor.
+
+        Parameters
+        ----------
+        interactions : ConversionInteraction
+            Conversion interaction whose source and target define the
+            anchor location.
+
+        Returns
+        -------
+        tuple[float, float]
+            Anchor coordinates ``(ax, ay)`` in layout space.
+        """
         source = interactions.source
         target = interactions.target
 
@@ -45,7 +79,13 @@ class Layout:
 
 
     def layout_positions(self):
-        """Pre-layout positions: Assign x,y to metabolites and pathway nodes only."""
+        """Assign node positions and prepare conversion geometry.
+
+        Computes x,y coordinates for metabolite and pathway nodes,
+        places enzymes that are not yet tied to anchors, and precomputes
+        auxiliary depth information used later for routing conversion
+        edges.
+        """
         G = self._build_skeleton_graph()
         self._parent_of = self._compute_parent_map(G)
         in_deg, out_deg = self._precompute_degrees(G)
@@ -66,9 +106,16 @@ class Layout:
         self._laid_out = True
 
 
-# Graph construction helpers
+    # Graph construction helpers
     def _build_skeleton_graph(self):
-        """Skeleton graph with metabolite/pathway nodes and conversion edges only."""
+        """Build a skeleton graph of non-enzyme nodes and conversion edges.
+
+        Returns
+        -------
+        networkx.DiGraph
+            Directed graph containing only metabolite/pathway nodes and
+            edges for ConversionInteraction objects.
+        """
         G = nx.DiGraph()
         for node in self.nodes.values():
             if node.node_type == "GeneProduct":
@@ -81,7 +128,19 @@ class Layout:
 
 
     def _compute_parent_map(self, G):
-        """First parent per node (used later for vertical adjustments)."""
+        """Compute a first-parent map for each node.
+
+        Parameters
+        ----------
+        G : networkx.DiGraph
+            Skeleton directed graph.
+
+        Returns
+        -------
+        dict
+            Mapping from child node ID to a single parent node ID,
+            used later for vertical adjustments.
+        """
         parent_of = {}
         for u, v in G.edges:
             if v not in parent_of:
@@ -90,14 +149,41 @@ class Layout:
 
 
     def _precompute_degrees(self, G):
-        """Precompute in/out degree maps for chain detection."""
+        """Precompute in/out degree maps for chain detection.
+
+        Parameters
+        ----------
+        G : networkx.DiGraph
+            Skeleton directed graph.
+
+        Returns
+        -------
+        tuple[dict, dict]
+            Two dictionaries mapping node IDs to in-degree and
+            out-degree respectively.
+        """
         in_deg = {n: G.in_degree(n) for n in G.nodes}
         out_deg = {n: G.out_degree(n) for n in G.nodes}
         return in_deg, out_deg
 
 
     def _build_scc_condensation(self, G):
-        """SCCs and condensation DAG."""
+        """Compute strongly connected components and their condensation DAG.
+
+        Parameters
+        ----------
+        G : networkx.DiGraph
+            Skeleton directed graph.
+
+        Returns
+        -------
+        tuple
+            (sccs, node2scc, CG, topo_scc) where:
+            - sccs is a list of SCC node sets,
+            - node2scc maps node ID to SCC index,
+            - CG is the condensation DAG,
+            - topo_scc is a topological ordering of SCC IDs.
+        """
         sccs = list(nx.strongly_connected_components(G))
         node2scc = {}
         for idx, comp in enumerate(sccs):
@@ -109,7 +195,21 @@ class Layout:
 
 
     def _compute_scc_depths(self, CG, topo_scc):
-        """Depth per SCC (longest path) and SCC layers."""
+        """Compute SCC depths (longest path) and group SCCs by depth.
+
+        Parameters
+        ----------
+        CG : networkx.DiGraph
+            Condensation DAG of SCCs.
+        topo_scc : list
+            Topological ordering of SCC IDs.
+
+        Returns
+        -------
+        tuple
+            depth_scc (dict) mapping SCC ID to depth, and scc_layers
+            (list of lists) grouping SCC IDs by depth.
+        """
         depth_scc = {c: 0 for c in topo_scc}
         for u in topo_scc:
             for v in CG.successors(u):
@@ -123,7 +223,21 @@ class Layout:
 
 
     def _build_node_layers(self, sccs, scc_layers):
-        """Expand SCC layers to node layers and assign base node depths."""
+        """Expand SCC layers to node layers and assign base node depths.
+
+        Parameters
+        ----------
+        sccs : list[set]
+            List of strongly connected components as node sets.
+        scc_layers : list[list[int]]
+            SCC IDs grouped by depth.
+
+        Returns
+        -------
+        tuple
+            layers (list of lists of node IDs) and node_depth (dict)
+            mapping node ID to a base depth value.
+        """
         layers = []
         node_depth = {}
         for d, comps in enumerate(scc_layers):
@@ -140,9 +254,19 @@ class Layout:
         return layers, node_depth
 
 
-# Placement helpers
+    # Placement helpers
     def _place_layers(self, G, CG, sccs, node2scc, layers, in_deg, out_deg):
-        """Horizontal spacing, SCC ordering, SCC and node placement."""
+        """Place all layers horizontally and vertically.
+
+        Handles SCC ordering within each layer, horizontal spacing, and
+        initial placement of all non-enzyme nodes.
+
+        Returns
+        -------
+        tuple
+            placed_x (dict) mapping node ID to x-coordinate and
+            placed_scc_x (dict) mapping SCC ID to center x-coordinate.
+        """
         k_max = max((len(L) for L in layers), default=1)
         span_max = max(0, (k_max - 1) * COL_GAP)
 
@@ -165,7 +289,19 @@ class Layout:
 
 
     def _compute_scc_local_depth(self, CG):
-        """Local depth of each SCC within its parent’s subgraph."""
+        """Compute local depth of each SCC within its parent's subgraph.
+
+        Parameters
+        ----------
+        CG : networkx.DiGraph
+            Condensation DAG of SCCs.
+
+        Returns
+        -------
+        dict
+            Mapping from SCC ID to a local depth value relative to its
+            parents, used to order siblings horizontally.
+        """
         scc_local_depth = defaultdict(int)
         for s in CG.nodes:
             if CG.out_degree(s) == 0:
@@ -182,9 +318,39 @@ class Layout:
         return scc_local_depth
 
 
-    def _place_single_layer(self, G, CG, sccs, node2scc, layer_nodes, ly, span_max,
-        in_deg, out_deg, scc_local_depth, placed_x, placed_scc_x, scc_child_count):
-        """Place nodes in a single layer."""
+    def _place_single_layer(
+        self, G, CG, sccs, node2scc, layer_nodes, ly, span_max,
+        in_deg, out_deg, scc_local_depth, placed_x, placed_scc_x, scc_child_count
+        ):
+        """Place nodes belonging to a single depth layer.
+
+        Parameters
+        ----------
+        G : networkx.DiGraph
+            Skeleton graph.
+        CG : networkx.DiGraph
+            SCC condensation DAG.
+        sccs : list[set]
+            Strongly connected components.
+        node2scc : dict
+            Mapping from node ID to SCC ID.
+        layer_nodes : list
+            Node IDs that belong to this depth layer.
+        ly : int
+            Layer index.
+        span_max : float
+            Maximum horizontal span among all layers.
+        in_deg, out_deg : dict
+            In-degree and out-degree maps.
+        scc_local_depth : dict
+            SCC local depths used to order siblings.
+        placed_x : dict
+            Mutable mapping from node ID to placed x-coordinate.
+        placed_scc_x : dict
+            Mutable mapping from SCC ID to center x-coordinate.
+        scc_child_count : dict
+            Mutable mapping from SCC ID to number of placed children.
+        """
         k = len(layer_nodes)
         span = max(0, (k - 1) * COL_GAP)
         start_x = BOARD_MARGIN + CENTERING_FACTOR * (span_max - span) / 2.0
@@ -195,6 +361,7 @@ class Layout:
         for n in layer_nodes:
             by_scc.setdefault(node2scc[n], []).append(n)
 
+        # Helper: sort SCCs in this layer by the average x of their parents.
         def scc_parent_avg_x(scc_id):
             parent_sccs = list(CG.predecessors(scc_id))
             xs = []
@@ -239,10 +406,36 @@ class Layout:
             i += 1
 
 
-    def _choose_scc_center_x(
-        self, CG, comp_id, col_x, scc_ids_in_layer,
-        scc_local_depth, placed_scc_x, scc_child_count
-    ):
+    def _choose_scc_center_x(self, CG, comp_id, col_x, scc_ids_in_layer,
+                             scc_local_depth, placed_scc_x, scc_child_count):
+        """Choose the horizontal center for a given SCC within a layer.
+
+        If the SCC has a single parent that is already placed, its center
+        is chosen relative to that parent and its siblings. Otherwise,
+        a default column position is used.
+
+        Parameters
+        ----------
+        CG : networkx.DiGraph
+            SCC condensation DAG.
+        comp_id : int
+            SCC identifier for which to choose a center.
+        col_x : float
+            Default column-based x position.
+        scc_ids_in_layer : list[int]
+            SCC IDs present in the current layer.
+        scc_local_depth : dict
+            Local depth metrics used to sort siblings.
+        placed_scc_x : dict
+            Mapping from SCC ID to already chosen center x.
+        scc_child_count : dict
+            Mapping from SCC ID to number of children already placed.
+
+        Returns
+        -------
+        float
+            Chosen x-coordinate for the SCC center.
+        """
         parent_sccs = list(CG.predecessors(comp_id))
         if len(parent_sccs) == 1 and parent_sccs[0] in placed_scc_x:
             p = parent_sccs[0]
@@ -263,6 +456,27 @@ class Layout:
 
     def _place_singleton_in_scc(self, G, graph_id, center_x, y, 
                                 in_deg, out_deg, placed_x):
+        """Place a single-node SCC, optionally aligning it with its parent.
+
+        For simple chains (single in-degree and out-degree of 1), the
+        singleton is aligned horizontally with its parent; otherwise it
+        is placed at the provided center position.
+
+        Parameters
+        ----------
+        G : networkx.DiGraph
+            Skeleton graph.
+        graph_id : str
+            Node graph ID to place.
+        center_x : float
+            Default x-coordinate for this node.
+        y : float
+            y-coordinate for this layer.
+        in_deg, out_deg : dict
+            In-degree and out-degree maps for G.
+        placed_x : dict
+            Mapping from node ID to already placed x-coordinates.
+        """
         node = self.nodes[graph_id]
         preds = list(G.predecessors(graph_id))
         if (preds and len(preds) == 1 and
@@ -277,6 +491,11 @@ class Layout:
 
 # Post‑placement helpers
     def _fix_vertical_single_parent_children(self, G, CG, node2scc):
+        """Adjust children of single-parent nodes to preserve vertical flow.
+
+        For nodes whose parent is in a different SCC and has exactly one
+        incoming edge, ensure the child is placed below the parent in Y.
+        """
         for child, parent in self._parent_of.items():
             if node2scc[child] == node2scc[parent]:
                 continue
@@ -295,6 +514,11 @@ class Layout:
 
 
     def _place_remaining_enzymes(self, placed_x, layers):
+        """Place enzyme nodes that were not positioned during main layout.
+
+        Remaining nodes (typically enzymes) are placed in an extra row
+        below all main layers, spaced horizontally.
+        """
         rest = [n for graph_id, n in self.nodes.items() if graph_id not in placed_x]
         for j, node in enumerate(rest):
             node.coords(
@@ -304,6 +528,11 @@ class Layout:
 
 
     def _shift_layout_into_view(self):
+        """Shift the layout horizontally so all nodes respect BOARD_MARGIN.
+
+        If any node lies left of the board margin, all nodes are shifted
+        right so that the minimum x-coordinate equals BOARD_MARGIN.
+        """
         xs = [node.x for node in self.nodes.values() if node.x is not None]
         if not xs:
             return
@@ -316,8 +545,23 @@ class Layout:
 
 
     def _layout_scc_as_tree(self, scc_nodes, G, center_x, base_y):
-        """
-        Layout SCC nodes as a vertical chain, expanding downwards.
+        """Layout nodes of one SCC as a vertical tree.
+
+        Chooses a root that has relatively few incoming edges from
+        outside the SCC, builds a BFS tree, assigns a small incremental
+        depth per level for routing, and positions the nodes in rows
+        below one another.
+
+        Parameters
+        ----------
+        scc_nodes : iterable
+            Node IDs belonging to a single strongly connected component.
+        G : networkx.DiGraph
+            Skeleton graph.
+        center_x : float
+            Horizontal center for this SCC.
+        base_y : float
+            Base y-coordinate for the SCC's top level.
         """
         # Subgraph restricted to SCC
         SG = G.subgraph(scc_nodes)
@@ -355,7 +599,11 @@ class Layout:
 
 
     def layout_anchors(self):
-        """Compute conversion anchor coordinates. To obtain anchor ID and xy"""
+        """Compute and store conversion anchor coordinates for all conversions.
+
+        For each ConversionInteraction, compute its anchor position and
+        save it in the interaction's private ``_anchor_xy`` attribute.
+        """
         for inter in self.interactions:
             if isinstance(inter, ConversionInteraction):
                 xy = self.compute_anchor_xy(inter) # calculate anchor coords
@@ -363,7 +611,13 @@ class Layout:
         
 
     def _layout_conversions(self):
-        """Decide attachment type and GPML points for each conversion."""
+        """Decide attachment type and GPML points for each conversion.
+
+        Uses the node depth information to choose between vertical
+        (source above target) and side attachments, and fills the
+        internal ``_src_point`` and ``_tgt_point`` dictionaries of each
+        ConversionInteraction with the GPML Point attributes.
+        """
             # NOTE: Attachment points 
             # left edge: (-1, 0) 
             # right: (1, 0)
@@ -435,8 +689,13 @@ class Layout:
 
 
     def layout_catalysis(self):
-        """Place enzyme nodes next to their anchors once catalysis 
-        interactions exist."""
+        """Place enzyme nodes next to their anchors when catalysis exists.
+
+        Groups catalysis interactions by anchor, positions enzyme nodes
+        next to the corresponding anchor (stacked vertically if needed),
+        and updates each catalysis interaction with the anchor
+        coordinates for GPML export.
+        """
         # Build mapping: anchor_id -> (ax, ay)
         anchor_xy_dict = {     
             inter.anchor_id: inter._anchor_xy

@@ -4,11 +4,31 @@ import logging
 
 from .model import Node, Interaction, ConversionInteraction
 
+
 # Global variables with accepted variants
 PATHWAY_DB_NAMES = {"wikipathways", "reactome", "kegg pathway"}
 
+
 class Parser:
+    """Parse ID metadata and relations tables into nodes and interactions.
+
+    This class takes two pandas DataFrames, one with identifier metadata
+    and one describing source-target relationships, and builds in-memory
+    Node and Interaction objects suitable for layout and GPML export.
+    """
+
     def __init__(self, id_data_df, relations_df):
+        """Initialize the parser with ID metadata and relations tables.
+
+        Parameters
+        ----------
+        id_data_df : pandas.DataFrame
+            Table containing at least three columns: identifier,
+            database name, and display name (label).
+        relations_df : pandas.DataFrame
+            Table containing at least three columns: source ID, target
+            ID, and catalyser ID.
+        """
         self.id_data_df = id_data_df
         self.relations_df = relations_df
         self.db_index = {}
@@ -24,7 +44,21 @@ class Parser:
         self._clean_id_metadata()
 
     def _clean_field(self, value, *, empty_to_none=True):
-        """Normalize string-like fields from TSV/CSV."""
+        """Normalize string-like fields from TSV/CSV.
+
+        Parameters
+        ----------
+        value : Any
+            Raw field value as read from a DataFrame.
+        empty_to_none : bool, optional
+            If True, empty strings are converted to None; otherwise they
+            are kept as empty strings.
+
+        Returns
+        -------
+        Any
+            Stripped string, None, or the original value if not string-like.
+        """
         if isinstance(value, str):
             value = value.strip()
         if pd.isna(value):
@@ -35,7 +69,12 @@ class Parser:
 
 
     def _clean_id_metadata(self):
-        """Normalize key columns in ID metadata (strip spaces, etc.)."""
+        """Normalize key columns in ID metadata (strip spaces, etc.).
+
+        Strips leading and trailing whitespace from the identifier,
+        database, and name columns in the ID metadata table so lookups
+        from the relations table are robust to extra spaces.
+        """
         for col in (self.id_col, self.db_col, self.name_col):
             self.id_data_df[col] = self.id_data_df[col].apply(
                 lambda v: self._clean_field(v, empty_to_none=False)
@@ -43,12 +82,23 @@ class Parser:
 
 
     def _is_pathway(self, node_id):
-        """
-        Devuelve True si:
-        - El ID tiene formato WikiPathways (WP5176, WP12345_r2, etc.), o
-        - El ID tiene formato KEGG Pathway (hsa00120, map00121, etc.), o
-        - En la columna db_col correspondiente a ese ID aparece la palabra
-            'pathway'.
+        """Return True if a node ID corresponds to a pathway entry.
+
+        A node is classified as a pathway if:
+        - The ID matches a WikiPathways pattern (e.g. WP5176, WP12345_r2).
+        - The ID matches a KEGG pathway pattern (e.g. hsa00120, map00121).
+        - The associated database field contains one of PATHWAY_DB_NAMES 
+        ("wikipathways", "reactome", "kegg pathway").
+
+        Parameters
+        ----------
+        node_id : Any
+            Identifier value from the relations or metadata table.
+
+        Returns
+        -------
+        bool
+            True if the ID is treated as a pathway; False otherwise.
         """
         if pd.isnull(node_id):
             return False
@@ -72,7 +122,19 @@ class Parser:
 
 
     def _get_create_node (self, node_id):
-        """For source and target nodes"""
+        """Retrieve or create a Node for a given metabolite/pathway ID.
+
+        Parameters
+        ----------
+        node_id : Any
+            Identifier value from the relations table.
+
+        Returns
+        -------
+        Node or None
+            Existing or newly created Node instance, or None if the ID
+            is missing or not found in the metadata table.
+        """
         node_id = self._clean_field(node_id)  # normalize ID
         if pd.isnull(node_id):
             return None
@@ -85,7 +147,7 @@ class Parser:
         # Find metadata row
         match = self.id_data_df[self.id_data_df[self.id_col] == node_id]
         if match.empty:
-            logging.warning(f"ID '{node_id}' not found in ID metadata; skipping node")
+            logging.warning(f"ID '{node_id}' not found in ID metadata; skipping node.")
             return None
         
         info = match.iloc[0]
@@ -106,6 +168,20 @@ class Parser:
 
 
     def build_conversions(self, row):
+        """Create or reuse a ConversionInteraction from a relations row.
+
+        Parameters
+        ----------
+        row : pandas.Series or tuple-like
+            Single row from the relations table, accessed via itertuples
+            or similar, providing source and target identifiers.
+
+        Returns
+        -------
+        ConversionInteraction or None
+            ConversionInteraction instance linking source and target
+            nodes, or None if either endpoint cannot be resolved.
+        """
         # Obtain source and target ID
         raw_source = getattr(row, self.source_col)
         raw_target = getattr(row, self.target_col)
@@ -133,7 +209,19 @@ class Parser:
         
 
     def _create_catalyser_node(self, catal_id):
-        """For catalyser nodes"""
+        """Create an enzyme (GeneProduct) node for a catalyser ID.
+
+        Parameters
+        ----------
+        catal_id : Any
+            Identifier of the catalysing enzyme or protein.
+
+        Returns
+        -------
+        Node or None
+            Newly created GeneProduct node, or None if the ID is empty
+            or not found in the metadata table.
+        """
         catal_id = self._clean_field(catal_id)
         if pd.isnull(catal_id):
             return None
@@ -141,7 +229,7 @@ class Parser:
         # Find metadata row
         match = self.id_data_df[self.id_data_df[self.id_col] == catal_id]
         if match.empty:
-            logging.warning(f"ID '{catal_id}' not found in ID metadata; skipping node")
+            logging.warning(f"ID '{catal_id}' not found in ID metadata; skipping node.")
             return None
         
         info = match.iloc[0]
@@ -156,6 +244,21 @@ class Parser:
     
 
     def build_catalysis(self, row, conv_interaction):
+        """Create a catalysis Interaction linking an enzyme to a conversion.
+
+        Parameters
+        ----------
+        row : pandas.Series or tuple-like
+            Row from the relations table providing the catalyser ID.
+        conv_interaction : ConversionInteraction
+            Conversion interaction whose anchor will be used as target.
+
+        Returns
+        -------
+        Interaction or None
+            Catalysis interaction from the enzyme node to the conversion
+            anchor, or None if no valid catalyser is present.
+        """
         # Obtain catalyser ID
         raw_catal = getattr(row, self.catalyser_col)
         catal_id = self._clean_field(raw_catal)
@@ -178,8 +281,19 @@ class Parser:
 
 
     def get_node_colour(self, node_type):
-        """Get XML Graphics standards stablished by WikiPathways for the 
-        different node types"""
+        """Return the WikiPathways-standard color for a given node type.
+
+        Parameters
+        ----------
+        node_type : str
+            Logical node type ("Metabolite", "Pathway", "GeneProduct",
+            or similar).
+
+        Returns
+        -------
+        str
+            Hex color string to use in GPML Graphics for this node type.
+        """
         if node_type == "Metabolite": 
             return "0000ff"
         elif node_type == "Pathway": 

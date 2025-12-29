@@ -1,4 +1,10 @@
-from pathways_tool.cli import main
+"""Command-line entry point for the GPML pathway builder.
+
+Parses command-line arguments, loads the YAML configuration, and runs
+the GPML generation pipeline. Configuration and file-related errors
+are logged and then re-raised.
+"""
+
 from pathways_tool.config import load_config
 from pathways_tool.cli import run_from_config
 import argparse

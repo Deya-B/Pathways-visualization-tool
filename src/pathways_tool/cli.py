@@ -9,6 +9,14 @@ from .config import GPMLConfig, setup_logging
 
 
 def run_from_config(config: GPMLConfig):
+    """Run the GPML pipeline using a pre-loaded configuration.
+
+    Parameters
+    ----------
+    config : GPMLConfig
+        Configuration object providing pathway metadata, input file
+        paths, output filename, delimiter, and logging settings.
+    """
     setup_logging(config)
     main(
         pathway_title=config.pathway_title,
@@ -20,10 +28,37 @@ def run_from_config(config: GPMLConfig):
     )
 
 
-def main(pathway_title, organism, 
-         ID_data_file, relations_file, output_filename, 
-         delimiter="\t"):
-    """Main function to build GPML from ID metadata and relations files."""
+def main(
+    pathway_title,
+    organism,
+    ID_data_file,
+    relations_file,
+    output_filename,
+    delimiter="\t",
+    ):
+    """Build a GPML pathway from ID metadata and relations tables.
+
+    This function reads the input TSV/CSV files, constructs Node and
+    Interaction objects, applies a layout to compute coordinates and
+    anchors, and finally writes a GPML XML file to disk.
+
+    Parameters
+    ----------
+    pathway_title : str
+        Title to use for the GPML pathway.
+    organism : str
+        Organism name recorded in the GPML metadata.
+    ID_data_file : str
+        Path to the ID metadata file with identifiers, databases, and
+        display names.
+    relations_file : str
+        Path to the relations file describing source, target, and
+        catalyser IDs.
+    output_filename : str
+        Path where the resulting GPML file will be written.
+    delimiter : str, optional
+        Field delimiter used in the input files, by default "\\t".
+    """
     id_data_df = read_csv(ID_data_file, sep=delimiter)
     relations_df = read_csv(relations_file, sep=delimiter)
 
@@ -62,7 +97,6 @@ def main(pathway_title, organism,
         nodes=builder.nodes,
         interactions=builder.interactions
     )
-    root = xml_builder.to_etree()
     tree = ET.ElementTree(xml_builder.to_etree())
 
     try:
