@@ -11,6 +11,10 @@ from .config import GPMLConfig, setup_logging
 def run_from_config(config: GPMLConfig):
     """Run the GPML pipeline using a pre-loaded configuration.
 
+    Configures logging from the given GPMLConfig, emits warnings for
+    empty but allowed fields (such as pathway_title, organism, or file
+    paths), and then calls ``main`` to execute the pipeline.
+
     Parameters
     ----------
     config : GPMLConfig
@@ -18,6 +22,24 @@ def run_from_config(config: GPMLConfig):
         paths, output filename, delimiter, and logging settings.
     """
     setup_logging(config)
+    if not config.pathway_title:
+        logging.warning(
+        "\n*** Config has an empty 'pathway_title'; GPML will use an "
+        "empty title.***\n"
+        )
+    if (not config.id_data_file 
+        or not config.relations_file 
+        or not config.output_filename):
+        logging.warning(
+        "\n*** Some file paths are empty; check 'name' and input/output"
+        "settings in the config.***\n"
+        )
+    if not config.organism:
+        logging.warning(
+        "\n*** No 'organism' provided in config; organism field will "
+        "be empty in the final GPML.***\n"
+        )
+        
     main(
         pathway_title=config.pathway_title,
         organism=config.organism,

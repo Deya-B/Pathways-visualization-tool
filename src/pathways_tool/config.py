@@ -41,8 +41,10 @@ def load_config(path: str) -> GPMLConfig:
     """Load YAML configuration, apply {name} templates, and build GPMLConfig.
 
     The raw YAML configuration may contain `{name}` placeholders in string
-    values. These are expanded using the optional top-level ``name`` field
-    before input/output paths and logging options are resolved.
+    values. These are expanded using the required top-level ``name`` field
+    before input/output paths and logging options are resolved. The function
+    validates that mandatory top-level and nested keys are present and that
+    ``name`` is non-empty.
 
     Parameters
     ----------
@@ -61,8 +63,10 @@ def load_config(path: str) -> GPMLConfig:
     FileNotFoundError
         If the configuration file does not exist.
     ValueError
-        If required top-level keys (\"pathway_title\", \"input\", \"output\")
-        are missing from the configuration.
+        If required top-level keys (\"pathway_title\", \"name\", \"input\",
+        \"output\") are missing, if ``name`` is empty, or if required keys
+        are missing inside the ``input`` (folder, id_data_file,
+        relations_file) or ``output`` (folder, filename) sections.
     """
     if not os.path.isfile(path):
         raise FileNotFoundError(f"Config file not found: {path}")
@@ -72,11 +76,23 @@ def load_config(path: str) -> GPMLConfig:
 
     # Validate required keys
     missing = []
-    for key in ("pathway_title", "input", "output"):
+    for key in ("pathway_title", "name", "input", "output"):
         if key not in raw_cfg:
             missing.append(key)
     if missing:
-        raise ValueError(f"Missing required config keys: {', '.join(missing)}")
+        raise ValueError (
+            "Invalid config: missing top-level keys: "
+            f"{', '.join(missing)}. "
+            "Expected keys: pathway_title, input, name, "
+            "output (and optional organism, logging)."
+        )
+    
+    if not str(raw_cfg.get("name", "")).strip():
+        raise ValueError(
+            "Invalid config: 'name' is empty. "
+            "This is used to build file names (e.g. {name}.tsv). "
+            "Please set a non-empty 'name' value in the YAML."
+        )
 
     # variables available in templates
     vars_dict = {"name": raw_cfg.get("name", ""),}
@@ -86,6 +102,22 @@ def load_config(path: str) -> GPMLConfig:
     in_cfg = cfg.get("input", {})
     out_cfg = cfg.get("output", {})
     log_cfg = cfg.get("logging", {})
+
+    # Nested keys under input/output
+    missing_input = [k for k in ("folder", "id_data_file", "relations_file") if k not in in_cfg]
+    missing_output = [k for k in ("folder", "filename") if k not in out_cfg]
+
+    errors = []
+    if missing_input:
+        errors.append(
+            "input section is missing: " + ", ".join(missing_input)
+            + " (required: folder, id_data_file, relations_file)"
+        )
+    if missing_output:
+        errors.append("output section is missing: " + ", ".join(missing_output)
+                      + " (required: folder, filename)")
+    if errors:
+        raise ValueError("Invalid config:\n  - " + "\n  - ".join(errors))
 
     in_folder = in_cfg.get("folder", "")
     out_folder = out_cfg.get("folder", "")
