@@ -2,12 +2,12 @@
 
 This folder contains the main Python pipelines used in the project:
 
-- [`DB_crosslink.py`](#cross-referencing-pipeline): cross‑referencing pipeline for metabolite and protein identifiers.
-- [`pathways_tool/:`](#tsv-to-gpml-pathway-builder): modular library and CLI to convert pathway TSV/CSV tables into GPML for PathVisio/WikiPathways.
+- [`DB_crosslink.py`](#cross-referencing-pipeline): cross-referencing pipeline for metabolite and protein identifiers.
+- [`pathways_tool/`](#tsv-to-gpml-pathway-builder): modular library and CLI to convert pathway TSV/CSV tables into GPML for PathVisio/WikiPathways.
 
 ---
 
-## Cross‑referencing Pipeline
+## Cross-referencing pipeline
 
 `DB_crosslink.py` annotates metabolite and protein identifiers from **LipidMaps**, **UniProt**, and **PubChem**, and adds cross‑references to several metabolite databases plus RefSeq accessions for proteins.
 
@@ -112,7 +112,7 @@ The script generates this `example_updated.txt`:
 ---
 
 
-## TSV‑to‑GPML pathway builder
+## TSV-to-GPML pathway builder
 
 The `pathways_tool` package provides a **modular library** and **command‑line interface** to build GPML pathway files from two TSV/CSV tables: one with ID metadata (metabolites, pathways, enzymes) and one with source–target relationships.
 
