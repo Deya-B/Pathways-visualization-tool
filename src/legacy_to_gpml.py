@@ -1,3 +1,5 @@
+# FROZEN LEGAZY
+
 import argparse
 import os
 import yaml # pip install pyyaml
@@ -1118,23 +1120,23 @@ idgenerator = IDGenerator()
 
 ############################# ENTRY POINT #####################################
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Build GPML pathway from ID_metadata and relations tables."
-    )
-    parser.add_argument("-c", "--config", required=True,
-                        help="Path to YAML configuration file.")
-    args = parser.parse_args()
+# if __name__ == "__main__":
+#     parser = argparse.ArgumentParser(
+#         description="Build GPML pathway from ID_metadata and relations tables."
+#     )
+#     parser.add_argument("-c", "--config", required=True,
+#                         help="Path to YAML configuration file.")
+#     args = parser.parse_args()
 
-    try:
-        cfg = load_config(args.config)
-        run_from_config(cfg)
-    except FileNotFoundError as e:
-        logging.error(str(e))
-        raise
-    except ValueError as e:
-        logging.error(f"Configuration error: {e}")
-        raise
+#     try:
+#         cfg = load_config(args.config)
+#         run_from_config(cfg)
+#     except FileNotFoundError as e:
+#         logging.error(str(e))
+#         raise
+#     except ValueError as e:
+#         logging.error(f"Configuration error: {e}")
+#         raise
 
 
 ## NOTES:

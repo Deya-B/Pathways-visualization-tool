@@ -1,8 +1,8 @@
 # name: "AlternativeBA"
-# name: "CA-DCA_UCA"
+name: "CA-DCA_UCA"
 # name: "CDCA-LCA_UDCA"
 # name: "MurineCDCA-MCA_MDCA"
-name: "7a-dehydroxylation"
+# name: "7a-dehydroxylation"
 
 pathway_title: "{name}"
 organism: "Homo sapiens" # "Mus musculus"
