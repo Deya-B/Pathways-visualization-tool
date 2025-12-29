@@ -1,0 +1,148 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Pathway xmlns="http://pathvisio.org/GPML/2013a" Name="MediumComplexityPathway" Version="2025-12-29" Organism="Homo sapiens">
+  <Graphics BoardWidth="100" BoardHeight="100" />
+  <DataNode TextLabel="CA" GraphId="m0001" Type="Metabolite">
+    <Graphics CenterX="450.0" CenterY="80.0" Width="88.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="0000ff" />
+    <Xref Database="LIPID MAPS" ID="LMST04010001" />
+  </DataNode>
+  <DataNode TextLabel="3-oxoCA" GraphId="m0002" Type="Metabolite">
+    <Graphics CenterX="450.0" CenterY="200.0" Width="108.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="0000ff" />
+    <Xref Database="LIPID MAPS" ID="LMST04010443" />
+  </DataNode>
+  <DataNode TextLabel="IsoCA" GraphId="m0003" Type="Metabolite">
+    <Graphics CenterX="450.0" CenterY="320.0" Width="100.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="0000ff" />
+    <Xref Database="LIPID MAPS" ID="LMST04010086" />
+  </DataNode>
+  <DataNode TextLabel="7-oxoDCA" GraphId="m0004" Type="Metabolite">
+    <Graphics CenterX="200.0" CenterY="200.0" Width="112.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="0000ff" />
+    <Xref Database="LIPID MAPS" ID="LMST04010184" />
+  </DataNode>
+  <DataNode TextLabel="UCA" GraphId="m0005" Type="Metabolite">
+    <Graphics CenterX="200.0" CenterY="320.0" Width="92.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="0000ff" />
+    <Xref Database="LIPID MAPS" ID="LMST04010088" />
+  </DataNode>
+  <DataNode TextLabel="12-oxoCDCA" GraphId="m0006" Type="Metabolite">
+    <Graphics CenterX="700.0" CenterY="200.0" Width="120.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="0000ff" />
+    <Xref Database="LIPID MAPS" ID="LMST04010176" />
+  </DataNode>
+  <DataNode TextLabel="EpiCA" GraphId="m0007" Type="Metabolite">
+    <Graphics CenterX="700.0" CenterY="320.0" Width="100.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="0000ff" />
+    <Xref Database="LIPID MAPS" ID="LMST04010085" />
+  </DataNode>
+  <DataNode TextLabel="3AHDP_MEDG7" GraphId="e0001" Type="GeneProduct">
+    <Graphics CenterX="630.0" CenterY="128.5" Width="124.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="000000" />
+    <Xref Database="Uniprot-TrEMBL" ID="A7B3K3" />
+  </DataNode>
+  <DataNode TextLabel="3BHDP_MEDG7" GraphId="e0002" Type="GeneProduct">
+    <Graphics CenterX="630.0" CenterY="248.5" Width="124.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="000000" />
+    <Xref Database="Uniprot-TrEMBL" ID="A7AZH2" />
+  </DataNode>
+  <DataNode TextLabel="HDHA_ECOLI" GraphId="e0003" Type="GeneProduct">
+    <Graphics CenterX="430.0" CenterY="128.5" Width="120.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="000000" />
+    <Xref Database="Uniprot-TrEMBL" ID="P0AET8" />
+  </DataNode>
+  <DataNode TextLabel="HSDHB_MEDG7" GraphId="e0004" Type="GeneProduct">
+    <Graphics CenterX="380.0" CenterY="248.5" Width="124.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="000000" />
+    <Xref Database="Uniprot-TrEMBL" ID="A7B4V1" />
+  </DataNode>
+  <DataNode TextLabel="HMPREF0262_01073" GraphId="e0005" Type="GeneProduct">
+    <Graphics CenterX="830.0" CenterY="128.5" Width="144.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="000000" />
+    <Xref Database="Uniprot-TrEMBL" ID="P21215" />
+  </DataNode>
+  <DataNode TextLabel="G594_RS0113520" GraphId="e0006" Type="GeneProduct">
+    <Graphics CenterX="880.0" CenterY="248.5" Width="136.0" Height="25.0" FontWeight="Normal" FontSize="12" ShapeType="Rectangle" Valign="Middle" Color="000000" />
+    <Xref Database="Entrez Gene" ID="42776911" />
+  </DataNode>
+  <Interaction GraphId="i0001">
+    <Graphics ConnectorType="Elbow" LineThickness="1.0">
+      <Point X="400.0" Y="92.5" GraphRef="m0001" RelX="0.0" RelY="1.0" />
+      <Point X="400.0" Y="187.5" GraphRef="m0002" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0001" Position="0.8" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction GraphId="i0002">
+    <Graphics ConnectorType="Elbow" LineThickness="1.0">
+      <Point X="400.0" Y="212.5" GraphRef="m0002" RelX="0.0" RelY="1.0" />
+      <Point X="400.0" Y="307.5" GraphRef="m0003" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0002" Position="0.8" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction GraphId="i0003">
+    <Graphics ConnectorType="Elbow" LineThickness="1.0">
+      <Point X="400.0" Y="92.5" GraphRef="m0001" RelX="0.0" RelY="1.0" />
+      <Point X="150.0" Y="187.5" GraphRef="m0004" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0003" Position="0.8" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction GraphId="i0004">
+    <Graphics ConnectorType="Elbow" LineThickness="1.0">
+      <Point X="150.0" Y="212.5" GraphRef="m0004" RelX="0.0" RelY="1.0" />
+      <Point X="150.0" Y="307.5" GraphRef="m0005" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0004" Position="0.8" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction GraphId="i0005">
+    <Graphics ConnectorType="Elbow" LineThickness="1.0">
+      <Point X="400.0" Y="92.5" GraphRef="m0001" RelX="0.0" RelY="1.0" />
+      <Point X="650.0" Y="187.5" GraphRef="m0006" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0005" Position="0.8" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction GraphId="i0006">
+    <Graphics ConnectorType="Elbow" LineThickness="1.0">
+      <Point X="650.0" Y="212.5" GraphRef="m0006" RelX="0.0" RelY="1.0" />
+      <Point X="650.0" Y="307.5" GraphRef="m0007" RelX="0.0" RelY="-1.0" ArrowHead="mim-conversion" />
+      <Anchor GraphId="a0006" Position="0.8" Shape="None" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction GraphId="i0007">
+    <Graphics LineThickness="1.0">
+      <Point X="630.0" Y="128.5" GraphRef="e0001" RelX="0.0" RelY="0.0" />
+      <Point X="450.0" Y="168.5" GraphRef="a0001" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction GraphId="i0008">
+    <Graphics LineThickness="1.0">
+      <Point X="630.0" Y="248.5" GraphRef="e0002" RelX="0.0" RelY="0.0" />
+      <Point X="450.0" Y="288.5" GraphRef="a0002" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction GraphId="i0009">
+    <Graphics LineThickness="1.0">
+      <Point X="430.0" Y="128.5" GraphRef="e0003" RelX="0.0" RelY="0.0" />
+      <Point X="250.0" Y="168.5" GraphRef="a0003" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction GraphId="i0010">
+    <Graphics LineThickness="1.0">
+      <Point X="380.0" Y="248.5" GraphRef="e0004" RelX="0.0" RelY="0.0" />
+      <Point X="200.0" Y="288.5" GraphRef="a0004" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction GraphId="i0011">
+    <Graphics LineThickness="1.0">
+      <Point X="830.0" Y="128.5" GraphRef="e0005" RelX="0.0" RelY="0.0" />
+      <Point X="650.0" Y="168.5" GraphRef="a0005" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <Interaction GraphId="i0012">
+    <Graphics LineThickness="1.0">
+      <Point X="880.0" Y="248.5" GraphRef="e0006" RelX="0.0" RelY="0.0" />
+      <Point X="700.0" Y="288.5" GraphRef="a0006" RelX="0.0" RelY="0.0" ArrowHead="mim-catalysis" />
+    </Graphics>
+    <Xref Database="" ID="" />
+  </Interaction>
+  <InfoBox CenterX="0.0" CenterY="0.0" />
+  <Biopax />
+</Pathway>

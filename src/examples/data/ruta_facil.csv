@@ -1,8 +1,0 @@
-Node Type,Node Label,Database,Database_ID,Interaction Type,Interaction With,Catalytic
-Metabolite,Metabolite 1,ChEBI,CHEBI:17500,Conversion,Metabolite 2,Enzyme 1
-Metabolite,Metabolite 2,ChEBI,CHEBI:16466,Conversion,Metabolite 3,Enzyme 2
-Metabolite,Metabolite 2,ChEBI,CHEBI:16466,Conversion,Metabolite 4,Enzyme 2
-Metabolite,Metabolite 3,ChEBI,CHEBI:12345,Conversion
-Metabolite,Metabolite 4,ChEBI,CHEBI:67890,Conversion
-Enzyme,Enzyme 1,Ensembl,ENSG00000099377,Catalysis
-Enzyme,Enzyme 2,Ensembl,ENSG00000012345,Catalysis

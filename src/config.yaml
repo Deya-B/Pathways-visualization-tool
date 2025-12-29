@@ -2,19 +2,21 @@
 # name: "CA-DCA_UCA"
 # name: "CDCA-LCA_UDCA"
 # name: "MurineCDCA-MCA_MDCA"
-name: "7a-dehydroxylation"
+# name: "7a-dehydroxylation"
+name: "MediumComplexityPathway"
 
 pathway_title: "{name}"
 organism: "Homo sapiens" # "Mus musculus"
 
 input:
-  folder: "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/"
-  id_data_file: "{name}.tsv"
-  relations_file: "{name}_relationships.tsv"
+  # folder: "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/"
+  folder: "C:/Users/deyan/GitHub/Pathways-visualization-tool/src/examples/data/"
+  id_data_file: "{name}_ID_metadata.tsv"
+  relations_file: "{name}_relations.tsv"
   delimiter: "\t"
 
 output:
-  folder: "C:/Users/deyan/Desktop/BIOINFORMATICA/1TFM/src/examples/data/"
+  folder: "C:/Users/deyan/GitHub/Pathways-visualization-tool/src/examples/gpml/"
   filename: "{name}.gpml"
 
 logging:
