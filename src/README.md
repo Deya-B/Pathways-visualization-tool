@@ -116,7 +116,8 @@ The script generates this `example_updated.txt`:
 
 The `pathways_tool` package provides a **modular library** and **command‑line interface** to build GPML pathway files from two TSV/CSV tables: one with ID metadata (metabolites, pathways, enzymes) and one with source–target relationships.
 
-- Core modules:
+Core components:
+
   - `pathways_tool.parser`: builds **Node** and **Interaction** objects from pandas DataFrames.
   - `pathways_tool.layout`: computes a 2D layout (layers, positions, anchors) for nodes and interactions.
   - `pathways_tool.xml_builder`: generates GPML 2013a XML from the in‑memory graph.
@@ -146,20 +147,20 @@ The command‑line entry point uses a YAML config to describe titles, organism, 
 Minimal example:
 
 ```yaml
-# config.yaml
-name: "MurineCDCA-MCA_MDCA"
+# examples/configs/low_complexity.yaml
+name: "LowComplexityPathway"
 
 pathway_title: "{name}"
 organism: "Homo sapiens"
 
 input:
-  folder: "C:/path/to/examples/data/"
-  id_data_file: "{name}.tsv"
-  relations_file: "{name}_relationships.tsv"
+  folder: "examples/data/"
+  id_data_file: "{name}_ID_metadata.tsv"
+  relations_file: "{name}_relations.tsv"
   delimiter: "\t"
 
 output:
-  folder: "C:/path/to/examples/data/"
+  folder: "examples/gpml/"
   filename: "{name}.gpml"
 
 logging:
@@ -174,7 +175,7 @@ The `name` field can be reused inside strings via `{name}`, and `load_config` ex
 From the repository root:
 
 ```bash
-python src/main.py --config path/to/config.yaml
+python src/main.py --config examples/configs/low_complexity.yaml
 ```
 
 This will:
@@ -196,7 +197,7 @@ The same functionality can be used programmatically:
 from pathways_tool.config import load_config
 from pathways_tool.cli import run_from_config
 
-cfg = load_config("path/to/config.yaml")
+cfg = load_config("examples/configs/low_complexity.yaml")
 run_from_config(cfg)
 ```
 
@@ -223,3 +224,12 @@ xml_builder = XMLBuilder(
 tree = ET.ElementTree(xml_builder.to_etree())
 tree.write("my_pathway.gpml", encoding="utf-8", xml_declaration=True)
 ```
+
+## Example data
+
+Example low‑ and medium‑complexity pathways are provided under `examples/data/`:
+
+- `LowComplexityPathway_ID_metadata.tsv` / `LowComplexityPathway_relations.tsv`.
+- `MediumComplexityPathway_ID_metadata.tsv` / `MediumComplexityPathway_relations.tsv`.
+
+Use the provided YAML configs to generate GPML files from these examples.
