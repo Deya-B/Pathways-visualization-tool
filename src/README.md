@@ -3,7 +3,7 @@
 This folder contains the main Python pipelines used in the project:
 
 - [`DB_crosslink.py`](#cross‑referencing-pipeline): cross‑referencing pipeline for metabolite and protein identifiers.
-- [`to_gpml.py`](#gpml-converter-prototype): prototype converter from tabular pathway descriptions to GPML.
+- [`to_gpml.py`](#tsv‑to‑gpml-pathway-builder): prototype converter from tabular pathway descriptions to GPML.
 
 ---
 
@@ -111,62 +111,115 @@ The script generates this `example_updated.txt`:
 
 ---
 
-## GPML converter prototype
 
-`to_gpml.py` is a **work‑in‑progress** prototype that converts a CSV description of a pathway into a **GPML** file that can be opened and edited in **PathVisio** and potentially uploaded to **WikiPathways**.
+## TSV‑to‑GPML pathway builder
 
-### Current capabilities
+The `pathways_tool` package provides a **modular library** and **command‑line interface** to build GPML pathway files from two TSV/CSV tables: one with ID metadata (metabolites, pathways, enzymes) and one with source–target relationships.
 
-- Parse a CSV file listing:
-  - metabolites and products as nodes,
-  - enzymes as separate nodes,
-  - reactions / conversions (substrate → product),
-  - catalytic relationships (enzyme catalyzes conversion).
-- Build an internal pathway graph:
-  - `Node` objects for metabolites and enzymes, with labels and database xrefs.
-  - `Interaction` objects for:
-    - **Conversion** edges (substrate → product),
-    - **Catalysis** edges (enzyme → reaction anchor).
-- Apply an automatic layout:
-  - BFS‑style layering for metabolite/product nodes.
-  - Placement of enzymes near the anchor point(s) of the reactions they catalyze.
-  - Computation of a GPML “board” size based on node positions.
-- Export a GPML 2013a‑style XML file with:
-  - `DataNode` elements for metabolites and enzymes.
-  - `Interaction` elements for conversions and catalysis, including anchors.
-  - Basic node sizes, fonts, and colors.
+- Core modules:
+  - `pathways_tool.parser`: builds **Node** and **Interaction** objects from pandas DataFrames.
+  - `pathways_tool.layout`: computes a 2D layout (layers, positions, anchors) for nodes and interactions.
+  - `pathways_tool.xml_builder`: generates GPML 2013a XML from the in‑memory graph.
+  - `pathways_tool.config`: loads YAML configs, validates required fields, resolves paths, and sets up logging.
+  - `pathways_tool.cli`: orchestrates reading inputs, building the graph, layout, and writing the GPML file.
 
-### Expected input
+### Input files
 
-- A CSV file (default delimiter `\t`; the parser can be configured) containing at least:
-  - Node labels (metabolites, products, enzymes).
-  - Columns describing reaction source, target, and catalytic enzymes (exact column names depend on the current prototype and may still change).  
-- Example input tables are provided under `examples/data/`.
+The GPML builder expects:
 
-### Usage example
+- **ID metadata table** (TSV/CSV):
+  - Contains identifiers (ID), database names and display labels.
+  - Used to create `Node` objects for metabolites, enzymes, and pathway references (i.e. nodes that point to other pathways), with proper labels and xrefs.
 
-Minimal example (hard‑coded in the prototype at the moment):
+- **Relations table** (TSV/CSV):
+  - Describes reactions as source → target plus optional catalysts.
+  - Used to build:
+    - **Conversion** interactions (substrate → product)
+    - **Catalysis** interactions (enzyme → reaction anchor)
+
+Example tables and schemas are provided under `examples/data/`.
+
+### YAML configuration
+
+The command‑line entry point uses a YAML config to describe titles, organism, input files, and output file.
+
+Minimal example:
+
+```yaml
+# config.yaml
+name: "MurineCDCA-MCA_MDCA"
+
+pathway_title: "{name}"
+organism: "Homo sapiens"
+
+input:
+  folder: "C:/path/to/examples/data/"
+  id_data_file: "{name}.tsv"
+  relations_file: "{name}_relationships.tsv"
+  delimiter: "\t"
+
+output:
+  folder: "C:/path/to/examples/data/"
+  filename: "{name}.gpml"
+
+logging:
+  level: "INFO"
+  format: "%(levelname)s: %(message)s"
+```
+
+The `name` field can be reused inside strings via `{name}`, and `load_config` expands these templates and checks that required keys are present.
+
+### Command‑line usage
+
+From the repository root:
 
 ```bash
-python to_gpml.py
+python src/main.py --config path/to/config.yaml
 ```
 
 This will:
 
-- Read an example CSV such as `examples/data/rutamedia.tsv` (path currently set in the script).
-- Build a `Pathway` object.
-- Run the internal layout.
-- Save a `.gpml` file that can be opened in PathVisio.
+- Load and validate the YAML configuration into a `GPMLConfig` dataclass.
+- Configure logging according to `logging.level` and `logging.format`.
+- Read the ID and relations tables with robust CSV/TSV loading (`io_utils.read_csv`).
+- Build nodes and interactions with `Parser` from `pathways_tool.parser`.
+- Compute an automatic pathway layout with `Layout` from `pathways_tool.layout`.
+- Generate a GPML XML tree with `XMLBuilder` and write it to the configured output file.
 
-Open the resulting GPML in **PathVisio** and refine the layout or annotations there as needed.
+The resulting `.gpml` file can be used directly for computational analysis, or it can be opened in **PathVisio**, refined with manual edits to improve visualization, and then exported for upload and use in **WikiPathways** and other downstream computational analyses.
 
-### Status and roadmap
+### Library usage from Python
 
-- Status: **prototype**, not yet a stable library.
-- Known limitations:
-  - CSV schema is still evolving.
-  - Limited support for compartments, complexes, and advanced GPML features.
-- Planned improvements:
-  - Stable CLI entry point (input CSV, title, organism, output path).
-  - More flexible parsing of column names for metabolites/enzymes/reactions.
-  - Better layout heuristics and optional manual overrides.
+The same functionality can be used programmatically:
+
+```python
+from pathways_tool.config import load_config
+from pathways_tool.cli import run_from_config
+
+cfg = load_config("path/to/config.yaml")
+run_from_config(cfg)
+```
+
+Or, if you already have pandas DataFrames:
+
+```python
+from pathways_tool.parser import Parser
+from pathways_tool.layout import Layout
+from pathways_tool.xml_builder import XMLBuilder
+import xml.etree.ElementTree as ET
+
+builder = Parser(id_data_df, relations_df)
+layout = Layout(builder.nodes, builder.interactions)
+layout.layout_positions()
+layout.layout_anchors()
+layout.layout_catalysis()
+
+xml_builder = XMLBuilder(
+    title="My pathway",
+    organism="Homo sapiens",
+    nodes=builder.nodes,
+    interactions=builder.interactions,
+)
+tree = ET.ElementTree(xml_builder.to_etree())
+tree.write("my_pathway.gpml", encoding="utf-8", xml_declaration=True)
+```
